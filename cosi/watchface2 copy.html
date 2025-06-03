@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<title>Spinnennetz Watchface</title>
+
+<style>
+
+body {
+
+margin: 0;
+
+background-color: #ccc;
+
+display: flex;
+
+justify-content: center;
+
+align-items: center;
+
+height: 100vh;
+
+overflow: hidden;
+
+}
+
+canvas {
+
+display: block;
+
+border: 6px solid #444;
+
+border-radius: 40px;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+
+<script>
+
+let rings = [60, 90, 120, 150];
+
+let threads = [[], [], [], []];
+
+let spiders = [];
+
+let swayX = 0, swayY = 0;
+
+let swayVelX = 0, swayVelY = 0;
+
+let damping = 0.95;
+
+let swayForce = 0.5;
+
+let returningSpiders = [];
+
+function setup() {
+
+createCanvas(400, 400);
+
+angleMode(RADIANS);
+
+updateTime();
+
+for (let r = 0; r < 4; r++) {
+
+for (let i = 0; i < threads[r].length; i++) {
+
+spiders.push({
+
+ring: r,
+
+angle: threads[r][i].angle,
+
+x: 0,
+
+y: 0,
+
+vx: 0,
+
+vy: 0,
+
+returning: false
+
+});
+
+}
+
+}
+
+}
+
+function draw() {
+
+background('#ccc');
+
+translate(width / 2, height / 2);
+
+swayVelX *= damping;
+
+swayVelY *= damping;
+
+swayX += swayVelX;
+
+swayY += swayVelY;
+
+if (keyIsDown(65)) swayVelX -= swayForce; // A
+
+if (keyIsDown(68)) swayVelX += swayForce; // D
+
+if (keyIsDown(87)) swayVelY -= swayForce; // W
+
+if (keyIsDown(83)) swayVelY += swayForce; // S
+
+drawWeb();
+
+updateSpiders();
+
+}
+
+function drawWeb() {
+
+stroke('#3ba36b');
+
+strokeWeight(1);
+
+noFill();
+
+for (let r = 0; r < rings.length; r++) {
+
+let ring = rings[r];
+
+beginShape();
+
+for (let i = 0; i < threads[r].length; i++) {
+
+let a = threads[r][i].angle;
+
+let x = cos(a) * ring + swayX * (r + 1) * 0.2;
+
+let y = sin(a) * ring + swayY * (r + 1) * 0.2;
+
+vertex(x, y);
+
+}
+
+endShape(CLOSE);
+
+}
+
+}
+
+function updateSpiders() {
+
+for (let spider of spiders) {
+
+let r = rings[spider.ring];
+
+let targetX = cos(spider.angle) * r + swayX * (spider.ring + 1) * 0.2;
+
+let targetY = sin(spider.angle) * r + swayY * (spider.ring + 1) * 0.2;
+
+if (spider.returning) {
+
+spider.vx += (targetX - spider.x) * 0.01;
+
+spider.vy += (targetY - spider.y) * 0.01;
+
+}
+
+spider.vx *= 0.98;
+
+spider.vy *= 0.98;
+
+spider.x += spider.vx;
+
+spider.y += spider.vy;
+
+if (!spider.returning && (abs(swayVelX) > 4 || abs(swayVelY) > 4)) {
+
+// Fliegt los
+
+spider.vx = random(-5, 5);
+
+spider.vy = random(-5, 5);
+
+spider.returning = true;
+
+}
+
+fill(0);
+
+noStroke();
+
+ellipse(spider.x, spider.y, 6, 6);
+
+}
+
+}
+
+function updateTime() {
+
+let h = hour();
+
+let m = minute();
+
+let digits = [int(h / 10), h % 10, int(m / 10), m % 10];
+
+for (let i = 0; i < 4; i++) {
+
+let count = digits[i];
+
+threads[i] = [];
+
+let angleStep = TWO_PI / max(count, 1);
+
+for (let j = 0; j < count; j++) {
+
+threads[i].push({ angle: j * angleStep });
+
+}
+
+}
+
+spiders = [];
+
+for (let r = 0; r < 4; r++) {
+
+for (let i = 0; i < threads[r].length; i++) {
+
+spiders.push({
+
+ring: r,
+
+angle: threads[r][i].angle,
+
+x: cos(threads[r][i].angle) * rings[r],
+
+y: sin(threads[r][i].angle) * rings[r],
+
+vx: 0,
+
+vy: 0,
+
+returning: false
+
+});
+
+}
+
+}
+
+}
+
+</script>
+
+</body>
+
+</html>
