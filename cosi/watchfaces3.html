@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pendel Watchface</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script>
+let pendulums = [];
+let angleFactor = 0.5;
+let pushForce = 0;
+const CANVAS_SIZE = 400;
+const MAX_SWING = 0.6; // maximale Amplitude
+
+function setup() {
+  createCanvas(CANVAS_SIZE, CANVAS_SIZE);
+  frameRate(60);
+  angleMode(RADIANS);
+  textAlign(CENTER, CENTER);
+  setTimeDigits();
+}
+
+function draw() {
+  background(0);
+  translate(width / 2, 50);
+
+  handleInput();
+
+  for (let i = 0; i < pendulums.length; i++) {
+    let p = pendulums[i];
+    p.angleAcc = (-0.01 / p.length) * sin(p.angle); // Schwerkraft
+    p.angleVel += p.angleAcc;
+    p.angleVel *= 0.995; // Dämpfung
+    p.angle += p.angleVel;
+
+    // Auf Tastendruck mehr Energie geben
+    if (pushForce > 0) {
+      p.angleVel += pushForce * 0.01;
+    }
+
+    let x = sin(p.angle) * p.length;
+    let y = cos(p.angle) * p.length;
+
+    stroke(180);
+    strokeWeight(2);
+    line(p.origin.x, p.origin.y, p.origin.x + x, p.origin.y + y);
+
+    fill(0, 120, 255);
+    ellipse(p.origin.x + x, p.origin.y + y, p.size);
+
+    fill(255);
+    noStroke();
+    textSize(18);
+    text(p.value, p.origin.x + x, p.origin.y + y);
+  }
+
+  if (pushForce > 0) pushForce *= 0.95;
+}
+
+function handleInput() {
+  if (keyIsDown(87)) { // W drücken zum Anschubsen
+    pushForce = min(pushForce + 0.05, 2);
+  }
+}
+
+// Uhrzeit in Pendel umwandeln
+function setTimeDigits() {
+  let h = hour();
+  let m = minute();
+
+  let digits = [int(h / 10), h % 10, int(m / 10), m % 10];
+  pendulums = [];
+
+  for (let i = 0; i < digits.length; i++) {
+    let val = digits[i];
+    let len = map(val, 0, 9, 50, 140);
+    let originX = map(i, 0, 3, -140, 140);
+
+    pendulums.push({
+      value: val,
+      length: len,
+      size: map(val, 0, 9, 20, 40),
+      origin: createVector(originX, 0),
+      angle: 0,
+      angleVel: 0,
+      angleAcc: 0
+    });
+  }
+}
+
+// optional Uhrzeit alle Minute neu setzen
+setInterval(setTimeDigits, 60000);
+</script>
+</body>
+</html>
