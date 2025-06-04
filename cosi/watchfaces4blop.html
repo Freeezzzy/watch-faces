@@ -22,13 +22,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 <script>
 let baseRadius = 90;
-let blobDetail = 60;
+let blobDetail = 180;
 let pulse = 0;
 let lastSecond = -1;
 let hours = 0;
 let minutes = 0;
 let time = 0;
-let pos, vel;
+let blob;
 
 function setup() {
   createCanvas(400, 400);
@@ -36,13 +36,15 @@ function setup() {
   frameRate(60);
   updateTime();
   noiseDetail(3, 0.6);
-  pos = createVector(width / 2, height / 2);
-  vel = createVector(random(-0.3, 0.3), random(-0.3, 0.3));
+  blob = createBlob(width / 2, height / 2);
 }
 
 function draw() {
   background(0);
-  moveBlob();
+
+  drawDisplayBorder();
+  drawHourZacken();
+  drawMinuteZacken();
 
   let currentSecond = second();
   if (currentSecond !== lastSecond) {
@@ -51,21 +53,11 @@ function draw() {
     lastSecond = currentSecond;
   }
 
-  push();
-  translate(pos.x, pos.y);
-  drawFerroBlob();
-  drawHourZacken();
-  drawMinuteZacken();
-  pop();
+  blob.update();
+  blob.draw();
 
   pulse *= 0.9;
   time += 0.01;
-}
-
-function moveBlob() {
-  pos.add(vel);
-  if (pos.x < 80 || pos.x > width - 80) vel.x *= -1;
-  if (pos.y < 80 || pos.y > height - 80) vel.y *= -1;
 }
 
 function updateTime() {
@@ -75,33 +67,59 @@ function updateTime() {
   minutes = m;
 }
 
-function drawFerroBlob() {
+function drawDisplayBorder() {
   noFill();
-  stroke(255, 0, 0);
-  strokeWeight(1.5);
-  beginShape();
-  for (let i = 0; i < TWO_PI; i += TWO_PI / blobDetail) {
-    let freq = 20; // ferrofluid spike frequency
-    let amp = 15;  // spike amplitude
-    let r = baseRadius + sin(i * freq + time * 3) * amp + noise(cos(i) * 2, sin(i) * 2, time) * 20 + pulse * 10;
-    let x = cos(i) * r;
-    let y = sin(i) * r;
-    curveVertex(x, y);
+  stroke(255);
+  strokeWeight(2);
+  rectMode(CENTER);
+  rect(width / 2, height / 2, 360, 360, 40);
+}
+
+function createBlob(x, y) {
+  return {
+    pos: createVector(x, y),
+    vel: p5.Vector.random2D().mult(1.0),
+    update() {
+      this.pos.add(this.vel);
+      if (this.pos.x < 80 || this.pos.x > width - 80) this.vel.x *= -1;
+      if (this.pos.y < 80 || this.pos.y > height - 80) this.vel.y *= -1;
+    },
+    draw() {
+      push();
+      translate(this.pos.x, this.pos.y);
+      this.drawFerroBlob();
+      pop();
+    },
+    drawFerroBlob() {
+      noFill();
+      stroke(255, 0, 0);
+      strokeWeight(1.5);
+      beginShape();
+      for (let i = 0; i < TWO_PI; i += TWO_PI / blobDetail) {
+        let freq = 10;
+        let amp = 30;
+        let r = baseRadius + sin(i * freq + time) * amp + noise(cos(i) * 2, sin(i) * 2, time) * 35 + pulse * 20;
+        let x = cos(i) * r;
+        let y = sin(i) * r;
+        curveVertex(x, y);
+      }
+      endShape(CLOSE);
+    }
   }
-  endShape(CLOSE);
 }
 
 function drawHourZacken() {
   push();
   stroke(255);
   strokeWeight(2);
+  let radius = 180;
   let spikeLength = 18;
   for (let i = 0; i < hours; i++) {
     let angle = map(i, 0, 12, -PI / 2, PI * 3 / 2);
-    let x1 = cos(angle) * (baseRadius + 40);
-    let y1 = sin(angle) * (baseRadius + 40);
-    let x2 = cos(angle) * (baseRadius + 40 + spikeLength);
-    let y2 = sin(angle) * (baseRadius + 40 + spikeLength);
+    let x1 = width / 2 + cos(angle) * radius;
+    let y1 = height / 2 + sin(angle) * radius;
+    let x2 = width / 2 + cos(angle) * (radius + spikeLength);
+    let y2 = height / 2 + sin(angle) * (radius + spikeLength);
     line(x1, y1, x2, y2);
   }
   pop();
@@ -111,15 +129,17 @@ function drawMinuteZacken() {
   push();
   stroke(180);
   strokeWeight(1);
-  let count = minutes;
-  let offsetY = baseRadius + 90;
-  translate(0, offsetY);
-  for (let i = 0; i < count; i++) {
-    let x = map(i, 0, 60, -160, 160);
-    let height = 10;
-    if (i % 10 === 0) height = 30;
-    else if (i % 5 === 0) height = 20;
-    line(x, 0, x, -height);
+  let radius = 180;
+  for (let i = 0; i < minutes; i++) {
+    let angle = map(i, 0, 60, PI, TWO_PI);
+    let length = 10;
+    if (i % 10 === 0) length = 30;
+    else if (i % 5 === 0) length = 20;
+    let x1 = width / 2 + cos(angle) * radius;
+    let y1 = height / 2 + sin(angle) * radius;
+    let x2 = width / 2 + cos(angle) * (radius + length);
+    let y2 = height / 2 + sin(angle) * (radius + length);
+    line(x1, y1, x2, y2);
   }
   pop();
 }
