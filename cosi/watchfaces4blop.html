@@ -22,13 +22,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 <script>
 let baseRadius = 90;
-let blobDetail = 180;
+let blobDetail = 200;
 let pulse = 0;
 let lastSecond = -1;
 let hours = 0;
 let minutes = 0;
 let time = 0;
 let blob;
+
+const margin = 40;
+const borderSize = 360;
+const edgeLimit = (borderSize / 2) - margin;
 
 function setup() {
   createCanvas(400, 400);
@@ -41,7 +45,6 @@ function setup() {
 
 function draw() {
   background(0);
-
   drawDisplayBorder();
   drawHourZacken();
   drawMinuteZacken();
@@ -72,17 +75,17 @@ function drawDisplayBorder() {
   stroke(255);
   strokeWeight(2);
   rectMode(CENTER);
-  rect(width / 2, height / 2, 360, 360, 40);
+  rect(width / 2, height / 2, borderSize, borderSize, 40);
 }
 
 function createBlob(x, y) {
   return {
     pos: createVector(x, y),
-    vel: p5.Vector.random2D().mult(1.0),
+    vel: p5.Vector.random2D().mult(1.2),
     update() {
       this.pos.add(this.vel);
-      if (this.pos.x < 80 || this.pos.x > width - 80) this.vel.x *= -1;
-      if (this.pos.y < 80 || this.pos.y > height - 80) this.vel.y *= -1;
+      if (this.pos.x < width / 2 - edgeLimit || this.pos.x > width / 2 + edgeLimit) this.vel.x *= -1;
+      if (this.pos.y < height / 2 - edgeLimit || this.pos.y > height / 2 + edgeLimit) this.vel.y *= -1;
     },
     draw() {
       push();
@@ -91,20 +94,27 @@ function createBlob(x, y) {
       pop();
     },
     drawFerroBlob() {
-      noFill();
-      stroke(255, 0, 0);
-      strokeWeight(1.5);
-      beginShape();
-      for (let i = 0; i < TWO_PI; i += TWO_PI / blobDetail) {
-        let freq = 10;
-        let amp = 30;
-        let r = baseRadius + sin(i * freq + time) * amp + noise(cos(i) * 2, sin(i) * 2, time) * 35 + pulse * 20;
-        let x = cos(i) * r;
-        let y = sin(i) * r;
-        curveVertex(x, y);
-      }
-      endShape(CLOSE);
-    }
+  noFill();
+  stroke(255, 0, 0);
+  strokeWeight(1.5);
+  beginShape();
+  for (let i = 0; i < TWO_PI; i += TWO_PI / blobDetail) {
+    let freq = 10 + sin(i * 2.3 + time) * 5;
+    let amp = 30;
+    let organicity = 45;
+    let r = baseRadius + sin(i * freq + time) * amp + noise(cos(i) * 3 + time, sin(i) * 3 + time) * organicity + pulse * 25;
+
+    // Prevent overflow outside border
+    let blobBoundsPadding = 10;
+    r = min(r, edgeLimit - blobBoundsPadding);
+
+    let x = cos(i) * r;
+    let y = sin(i) * r;
+    curveVertex(x, y);
+  }
+  endShape(CLOSE);
+}
+
   }
 }
 
@@ -112,15 +122,13 @@ function drawHourZacken() {
   push();
   stroke(255);
   strokeWeight(2);
-  let radius = 180;
-  let spikeLength = 18;
+  let spacing = borderSize / 12;
   for (let i = 0; i < hours; i++) {
-    let angle = map(i, 0, 12, -PI / 2, PI * 3 / 2);
-    let x1 = width / 2 + cos(angle) * radius;
-    let y1 = height / 2 + sin(angle) * radius;
-    let x2 = width / 2 + cos(angle) * (radius + spikeLength);
-    let y2 = height / 2 + sin(angle) * (radius + spikeLength);
-    line(x1, y1, x2, y2);
+    let x = width / 2 - borderSize / 2 + spacing / 2 + i * spacing;
+    let y = height / 2 - borderSize / 2;
+    line(x, y, x, y - 15);
+    line(x, y - 15, x - 4, y - 8);
+    line(x, y - 15, x + 4, y - 8);
   }
   pop();
 }
@@ -128,18 +136,18 @@ function drawHourZacken() {
 function drawMinuteZacken() {
   push();
   stroke(180);
-  strokeWeight(1);
-  let radius = 180;
+  strokeWeight(1.5);
+  let spacing = borderSize / 60;
   for (let i = 0; i < minutes; i++) {
-    let angle = map(i, 0, 60, PI, TWO_PI);
-    let length = 10;
-    if (i % 10 === 0) length = 30;
-    else if (i % 5 === 0) length = 20;
-    let x1 = width / 2 + cos(angle) * radius;
-    let y1 = height / 2 + sin(angle) * radius;
-    let x2 = width / 2 + cos(angle) * (radius + length);
-    let y2 = height / 2 + sin(angle) * (radius + length);
-    line(x1, y1, x2, y2);
+    let x = width / 2 - borderSize / 2 + spacing / 2 + i * spacing;
+    let y = height / 2 + borderSize / 2;
+    let len = 5;
+    if (i % 10 === 0) len = 15;
+    else if (i % 5 === 0) len = 10;
+
+    line(x, y, x, y + len);
+    if (len >= 10) line(x - 3, y + len / 2, x + 3, y + len / 2);
+    if (len === 15) line(x - 3, y + len - 3, x + 3, y + len - 3);
   }
   pop();
 }
