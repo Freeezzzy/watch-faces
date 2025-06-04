@@ -1,81 +1,99 @@
+const { Engine, World, Bodies, Body, Composite } = Matter;
 
-const { Engine, Render, Runner, World, Bodies, Body, Composite } = Matter;
+let engine, world;
+let digits = [];
 
-// Initialisierung
-const engine = Engine.create();
-const world = engine.world;
-const canvas = document.querySelector("canvas");
+function setup() {
+  const canvas = createCanvas(windowWidth, windowHeight);
+  canvas.parent("thecanvas");
 
-const width = window.innerWidth;
-const height = window.innerHeight;
+  engine = Engine.create();
+  world = engine.world;
 
-// Render Setup
-const render = Render.create({
-  canvas: canvas,
-  engine: engine,
-  options: {
-    width,
-    height,
-    wireframes: false,
-    background: '#000'
-  }
-});
-Render.run(render);
-Runner.run(Runner.create(), engine);
-
-// Hilfsfunktion: Abgerundetes Rechteck
-function createRoundedBox(x, y, w, h, radius, color) {
-  const box = Bodies.rectangle(x, y, w, h, {
-    isStatic: true,
-    chamfer: { radius: radius },
-    render: {
-      fillStyle: color
-    }
-  });
-  return box;
-}
-
-// Hilfsfunktion: Ziffer als bewegliches Element
-function createDigit(x, y, color, label = "2") {
-  const digit = Bodies.circle(x, y, 20, {
-    restitution: 1,
-    friction: 0,
-    frictionAir: 0.001,
-    render: {
-      fillStyle: color,
-      text: {
-        content: label,
-        color: color,
-        size: 24
-      }
-    }
-  });
-  Body.setVelocity(digit, { x: (Math.random() - 0.5) * 5, y: (Math.random() - 0.5) * 5 });
-  return digit;
-}
-
-// Rechtecke und Ziffern erstellen
-const boxes = [
-  { x: 150, y: 150, color: "white", digitColor: "#00FF00", digit: "2" },
-  { x: 400, y: 150, color: "#00FF00", digitColor: "white", digit: "1" },
-  { x: 150, y: 400, color: "#222", digitColor: "#00FF00", digit: "3" },
-  { x: 400, y: 400, color: "#222", digitColor: "white", digit: "4" }
-];
-
-boxes.forEach((b) => {
-  const box = createRoundedBox(b.x, b.y, 150, 150, 20, b.color);
-  const digit = createDigit(b.x, b.y, b.digitColor, b.digit);
-  World.add(world, [box, digit]);
-
-  // Grenzen zum Abprallen innerhalb des Rechtecks
-  const w = 150, h = 150;
-  const wallThickness = 10;
-  const walls = [
-    Bodies.rectangle(b.x, b.y - h/2, w, wallThickness, { isStatic: true, render: { visible: false } }),
-    Bodies.rectangle(b.x, b.y + h/2, w, wallThickness, { isStatic: true, render: { visible: false } }),
-    Bodies.rectangle(b.x - w/2, b.y, wallThickness, h, { isStatic: true, render: { visible: false } }),
-    Bodies.rectangle(b.x + w/2, b.y, wallThickness, h, { isStatic: true, render: { visible: false } }),
+  let cfgs = [
+    { x: 150, y: 150, color: "#ffffff", digitColor: "#00ff00", digit: abstract2() },
+    { x: 350, y: 150, color: "#00ff00", digitColor: "#ffffff", digit: abstract1() },
+    { x: 150, y: 350, color: "#222222", digitColor: "#00ff00", digit: abstract3() },
+    { x: 350, y: 350, color: "#222222", digitColor: "#ffffff", digit: abstract5() }
   ];
-  World.add(world, walls);
-});
 
+  for (let cfg of cfgs) {
+    // Container walls
+    let container = createWalls(cfg.x, cfg.y, 120, 120);
+
+    // Digit group
+    let parts = cfg.digit.map(p => {
+      let b = Bodies.rectangle(cfg.x + p.x, cfg.y + p.y, p.w, p.h, {
+        restitution: 1,
+        frictionAir: 0.01
+      });
+      Body.setVelocity(b, { x: random(-2, 2), y: random(-2, 2) });
+      return b;
+    });
+
+    digits.push({ parts, color: cfg.color, digitColor: cfg.digitColor, pos: { x: cfg.x, y: cfg.y } });
+
+    World.add(world, [...parts, ...container]);
+  }
+}
+
+function draw() {
+  background(0);
+  Engine.update(engine);
+
+  for (let d of digits) {
+    fill(d.color);
+    noStroke();
+    rectMode(CENTER);
+    rect(d.pos.x, d.pos.y, 120, 120, 25);
+
+    fill(d.digitColor);
+    noStroke();
+    for (let p of d.parts) {
+      push();
+      translate(p.position.x, p.position.y);
+      rotate(p.angle);
+      rectMode(CENTER);
+      rect(0, 0, p.bounds.max.x - p.bounds.min.x, p.bounds.max.y - p.bounds.min.y, 5);
+      pop();
+    }
+  }
+}
+
+// Digit as parts (approximation)
+function abstract1() {
+  return [{ x: 0, y: -10, w: 8, h: 30 }];
+}
+
+function abstract2() {
+  return [
+    { x: 0, y: -15, w: 6, h: 20 },
+    { x: -10, y: 15, w: 20, h: 6 }
+  ];
+}
+
+function abstract3() {
+  return [
+    { x: -6, y: -10, w: 12, h: 6 },
+    { x: -6, y: 0, w: 12, h: 6 },
+    { x: -6, y: 10, w: 12, h: 6 }
+  ];
+}
+
+function abstract5() {
+  return [
+    { x: -10, y: -10, w: 6, h: 20 },
+    { x: 10, y: 10, w: 6, h: 20 }
+  ];
+}
+
+// Box with 4 inner walls
+function createWalls(x, y, w, h, t = 10) {
+  let hw = w / 2, hh = h / 2;
+  return [
+    Bodies.rectangle(x - hw, y, t, h, { isStatic: true }),
+    Bodies.rectangle(x + hw, y, t, h, { isStatic: true }),
+    Bodies.rectangle(x, y - hh, w, t, { isStatic: true }),
+    Bodies.rectangle(x, y + hh, w, t, { isStatic: true })
+  ];
+}
