@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Spiderweb Clock</title>
+  <style>
+    body { 
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas {
+      display: block;
+    }
+    #clock {
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="clock"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
+  <script>
+    // Farbpalette
+    const COLORS = {
+      white: '#FFFFFF',
+      black: '#000000',
+      gray: '#888888',
+      accent: '#FF5555'
+    };
+
+    // Matter.js Setup
+    const Engine = Matter.Engine,
+          Render = Matter.Render,
+          World = Matter.World,
+          Bodies = Matter.Bodies,
+          Body = Matter.Body,
+          Composite = Matter.Composite,
+          Constraint = Matter.Constraint;
+
+    // Engine erstellen
+    const engine = Engine.create({
+      enableSleeping: true
+    });
+    engine.world.gravity.y = 0;
+
+    // Renderer
+    const render = Render.create({
+      element: document.body,
+      engine: engine,
+      options: {
+        width: 400,
+        height: 400,
+        wireframes: false,
+        background: COLORS.black
+      }
+    });
+
+    // Uhrzentrum
+    const center = Bodies.circle(200, 200, 10, {
+      isStatic: true,
+      render: { fillStyle: COLORS.white }
+    });
+
+    // Uhrzeiger
+    const hourHand = Bodies.rectangle(200, 200, 80, 6, {
+      chamfer: { radius: 3 },
+      render: { fillStyle: COLORS.white }
+    });
+    
+    const minuteHand = Bodies.rectangle(200, 200, 120, 4, {
+      chamfer: { radius: 2 },
+      render: { fillStyle: COLORS.accent }
+    });
+
+    // Spinnennetz-Objekte
+    const webNodes = [];
+    const webConstraints = [];
+    const webAnchorPoints = [];
+
+    // Spinnennetz erstellen
+    function createWeb() {
+      // Altes Netz entfernen
+      World.remove(engine.world, webConstraints);
+      webConstraints.length = 0;
+      
+      // Ankerpunkte am Rand
+      const anchorCount = 12;
+      for (let i = 0; i < anchorCount; i++) {
+        const angle = (i / anchorCount) * Math.PI * 2;
+        const x = 200 + Math.cos(angle) * 180;
+        const y = 200 + Math.sin(angle) * 180;
+        
+        const anchor = Bodies.circle(x, y, 2, {
+          isStatic: true,
+          render: { visible: false }
+        });
+        webAnchorPoints.push(anchor);
+      }
+      
+      // Zufällige Knoten im Netz
+      const nodeCount = 8;
+      for (let i = 0; i < nodeCount; i++) {
+        const node = Bodies.circle(
+          140 + Math.random() * 120,
+          140 + Math.random() * 120,
+          1 + Math.random() * 3,
+          {
+            render: { fillStyle: COLORS.gray },
+            friction: 0.1
+          }
+        );
+        webNodes.push(node);
+        
+        // Verbindung zum Zentrum
+        webConstraints.push(Constraint.create({
+          pointA: { x: 200, y: 200 },
+          bodyB: node,
+          stiffness: 0.05,
+          render: { strokeStyle: COLORS.gray }
+        }));
+        
+        // Verbindung zu Ankerpunkten
+        webAnchorPoints.forEach(anchor => {
+          if (Math.random() > 0.7) {
+            webConstraints.push(Constraint.create({
+              bodyA: anchor,
+              bodyB: node,
+              stiffness: 0.03,
+              render: { strokeStyle: COLORS.gray }
+            }));
+          }
+        });
+      }
+      
+      // Verbindungen zwischen Knoten
+      webNodes.forEach((nodeA, i) => {
+        webNodes.slice(i + 1).forEach(nodeB => {
+          if (Math.random() > 0.8) {
+            webConstraints.push(Constraint.create({
+              bodyA: nodeA,
+              bodyB: nodeB,
+              stiffness: 0.02,
+              render: { strokeStyle: COLORS.gray }
+            }));
+          }
+        });
+      });
+      
+      World.add(engine.world, [...webAnchorPoints, ...webNodes, ...webConstraints]);
+    }
+
+    // Uhr aktualisieren
+    function updateClock() {
+      const now = new Date();
+      const hours = now.getHours() % 12;
+      const minutes = now.getMinutes();
+      const seconds = now.getSeconds();
+      
+      // Zeiger positionieren
+      Body.setAngle(hourHand, (hours / 12) * Math.PI * 2);
+      Body.setAngle(minuteHand, (minutes / 60) * Math.PI * 2);
+      
+      // Spinnennetz zerstören wenn Zeiger durchgehen
+      webNodes.forEach(node => {
+        if (Matter.SAT.collides(hourHand, node).collided ||
+            Matter.SAT.collides(minuteHand, node).collided) {
+          World.remove(engine.world, node);
+          webNodes.splice(webNodes.indexOf(node), 1);
+        }
+      });
+      
+      // Alle 30 Sekunden neues Netz spinnen
+      if (seconds % 30 === 0 && seconds < 2) {
+        createWeb();
+      }
+    }
+
+    // Initialisierung
+    World.add(engine.world, [center, hourHand, minuteHand]);
+    createWeb();
+    
+    // Animation starten
+    Engine.run(engine);
+    Render.run(render);
+    setInterval(updateClock, 1000);
+    updateClock();
+  </script>
+</body>
+</html>
