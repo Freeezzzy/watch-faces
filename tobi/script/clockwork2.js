@@ -7,6 +7,7 @@ let minWaterLevel;
 
 let splashes = [];
 let bubbles = [];
+let lastSecond = -1;
 
 function setup() {
   createCanvas(400, 400);
@@ -20,20 +21,27 @@ function draw() {
 
   let h = hour();
   let m = minute();
+  let s = second();
 
-  // Wasserstand an Minuten koppeln
+  // Test: feste Zeit simulieren
+  // let h = 11;
+  // let m = 59;
+
   waterLevel = map(m, 0, 59, minWaterLevel, maxWaterLevel);
-
-  // Wellenamplitude leicht variieren
   waveAmplitude = 15 + 5 * sin(frameCount * 0.02);
-
   waveSpeed = 0.03;
 
   drawWaterWithHourWaves(waterLevel, h);
-
-  updateAndShowBubbles(h);
-
+  updateAndShowBubbles(h, m);
   updateAndShowSplashes();
+
+  // Splash jede Sekunde
+  if (s !== lastSecond) {
+    lastSecond = s;
+    let x = random(width * 0.1, width * 0.9);
+    let y = random(waterLevel - waveAmplitude / 2, waterLevel + 10);
+    splashes.push(new Splash(x, y));
+  }
 }
 
 function drawWaterWithHourWaves(level, hours) {
@@ -43,26 +51,13 @@ function drawWaterWithHourWaves(level, hours) {
   vertex(0, height);
   vertex(0, level);
 
-  // Große Grundwelle (Basis)
+  let hourWaveCount = constrain(hours, 1, 23);
+
   for (let x = 0; x <= width; x++) {
     let baseWave = sin((x / waveLength) * TWO_PI + frameCount * waveSpeed) * waveAmplitude;
-    
-    // Kleine Wellen für jede Stunde
-    let hourWaves = 0;
-    let hourWaveCount = constrain(hours, 0, 23);
-    for (let i = 0; i < hourWaveCount; i++) {
-      // Verteile die kleinen Wellen gleichmäßig über die Breite
-      let wavePos = map(i, 0, hourWaveCount - 1, 0, width);
-      let distance = abs(x - wavePos);
-      let maxDist = width / hourWaveCount / 2;
-      if (distance < maxDist) {
-        // Kleine Welle ist eine Sinuswelle mit kleiner Amplitude, „lokal“ begrenzt
-        let localX = map(distance, maxDist, 0, 0, PI);
-        hourWaves += sin(localX) * 8;
-      }
-    }
-
-    let y = level + baseWave + hourWaves;
+    let zackenAmplitude = 8;
+    let zackenWave = sin((x / width) * hourWaveCount * TWO_PI) * zackenAmplitude;
+    let y = level + baseWave + zackenWave;
     vertex(x, y);
   }
 
@@ -70,7 +65,6 @@ function drawWaterWithHourWaves(level, hours) {
   endShape(CLOSE);
 }
 
-// Kleine weiße Blasen als optisches Detail
 class Bubble {
   constructor(x, y) {
     this.pos = createVector(x, y);
@@ -96,20 +90,20 @@ class Bubble {
   }
 }
 
-function updateAndShowBubbles(h) {
+function updateAndShowBubbles(h, m) {
   for (let i = bubbles.length - 1; i >= 0; i--) {
     bubbles[i].update();
     bubbles[i].show();
     if (bubbles[i].isDone()) bubbles.splice(i, 1);
   }
-  if (frameCount % 30 === 0 && bubbles.length < h) {
+
+  if (frameCount % 3 === 0 && bubbles.length < m) {
     let x = random(width * 0.1, width * 0.9);
     let y = random(waterLevel + 10, height - 10);
     bubbles.push(new Bubble(x, y));
   }
 }
 
-// Splash Klasse (weiße Spritzer)
 class Splash {
   constructor(x, y) {
     this.pos = createVector(x, y);
@@ -139,7 +133,6 @@ class Splash {
 
   show() {
     noStroke();
-    fill(255, 255, 255, 200);
     for (let p of this.particles) {
       fill(255, 255, 255, p.alpha);
       ellipse(p.pos.x, p.pos.y, p.size);
