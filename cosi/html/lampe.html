@@ -6,20 +6,57 @@
     <style>
         body {
             margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a1a;
             overflow: hidden;
-            background: #000; /* Schwarzer Hintergrund */
+        }
+        .watch-frame {
+            position: relative;
+            width: 396px;  /* Apple Watch width */
+            height: 484px; /* Apple Watch height */
+            background: #000;
+            border-radius: 90px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+        .digital-crown {
+            position: absolute;
+            right: -8px;
+            top: 50%;
+            transform: translateY(-30px);
+            width: 8px;
+            height: 40px;
+            background: #333;
+            border-radius: 4px 0 0 4px;
+        }
+        .side-button {
+            position: absolute;
+            right: -8px;
+            top: 50%;
+            transform: translateY(30px);
+            width: 8px;
+            height: 30px;
+            background: #333;
+            border-radius: 4px 0 0 4px;
         }
         canvas {
-            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
         }
         #time {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-family: 'Arial', sans-serif;
-            font-size: 3rem;
-            color: white; /* Weiße Uhrzeit */
+            font-family: 'SF Pro Display', -apple-system, sans-serif;
+            font-size: 4rem;
+            color: black;  /* Changed from white to black */
             text-align: center;
             z-index: 10;
             pointer-events: none;
@@ -27,7 +64,11 @@
     </style>
 </head>
 <body>
-    <div id="time">00:00</div>
+    <div class="watch-frame">
+        <div class="digital-crown"></div>
+        <div class="side-button"></div>
+        <div id="time">00:00</div>
+    </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
     <script>
         // Matter.js Setup
@@ -43,21 +84,21 @@
 
         // Renderer
         const render = Render.create({
-            element: document.body,
+            element: document.querySelector('.watch-frame'),
             engine: engine,
             options: {
-                width: window.innerWidth,
-                height: window.innerHeight,
+                width: 396,
+                height: 484,
                 wireframes: false,
-                background: '#000000' // Schwarzer Hintergrund
+                background: '#000000'
             }
         });
 
         // "Lampe" als physikalisches Objekt (Kreis mit radialem Gradient)
         const lamp = Bodies.circle(
-            window.innerWidth / 2,
-            window.innerHeight / 2,
-            100, {
+            396 / 2,
+            484 / 2,
+            50, { // Kleinerer Radius für die Lampe
                 render: {
                     fillStyle: 'transparent',
                     strokeStyle: 'transparent'
@@ -70,10 +111,10 @@
 
         // Wände (damit die Lampe nicht verschwindet)
         const wallOptions = { isStatic: true, render: { visible: false } };
-        const ground = Bodies.rectangle(window.innerWidth / 2, window.innerHeight, window.innerWidth, 10, wallOptions);
-        const ceiling = Bodies.rectangle(window.innerWidth / 2, 0, window.innerWidth, 10, wallOptions);
-        const leftWall = Bodies.rectangle(0, window.innerHeight / 2, 10, window.innerHeight, wallOptions);
-        const rightWall = Bodies.rectangle(window.innerWidth, window.innerHeight / 2, 10, window.innerHeight, wallOptions);
+        const ground = Bodies.rectangle(396 / 2, 484, 396, 10, wallOptions);
+        const ceiling = Bodies.rectangle(396 / 2, 0, 396, 10, wallOptions);
+        const leftWall = Bodies.rectangle(0, 484 / 2, 10, 484, wallOptions);
+        const rightWall = Bodies.rectangle(396, 484 / 2, 10, 484, wallOptions);
 
         // Alles zur Welt hinzufügen
         World.add(engine.world, [lamp, ground, ceiling, leftWall, rightWall]);
@@ -89,17 +130,23 @@
         updateTime();
 
         // Lampe bewegen (z. B. per Maus/Touch oder Beschleunigungssensor)
-        window.addEventListener('mousemove', (e) => {
-            Body.setPosition(lamp, { x: e.clientX, y: e.clientY });
-        });
+        const moveLamp = (e) => {
+            const watchFrame = document.querySelector('.watch-frame');
+            const rect = watchFrame.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            Body.setPosition(lamp, { x, y });
+        };
+        window.addEventListener('mousemove', moveLamp);
 
         // Für Smartwatches: Beschleunigungssensor nutzen
         if (window.DeviceMotionEvent) {
-            window.addEventListener('devicemotion', (e) => {
+            const handleDeviceMotion = (e) => {
                 const x = (e.accelerationIncludingGravity.x || 0) * 10;
                 const y = (e.accelerationIncludingGravity.y || 0) * 10;
                 Body.applyForce(lamp, lamp.position, { x: x * 0.001, y: y * 0.001 });
-            });
+            };
+            window.addEventListener('devicemotion', handleDeviceMotion);
         }
 
         // Starte Engine & Renderer
@@ -107,22 +154,46 @@
         Render.run(render);
 
         // Canvas nachträglich stylen (für den Lichteffekt)
-        setTimeout(() => {
-            const canvas = document.querySelector('canvas');
-            canvas.style.background = 'radial-gradient(circle at ' +
-                lamp.position.x + 'px ' + lamp.position.y + 'px, ' +
-                'rgba(255, 255, 255, 0.2) 0%, ' + // Leichte Akzentfarbe (z. B. Blau: rgba(0, 100, 255, 0.2))
-                'rgba(0, 0, 0, 1) 70%)'; // Ausblenden zu Schwarz
-        }, 100);
-
-        // Lampe verfolgen für den Gradienten
+        const canvas = document.querySelector('canvas');
+        const timeElement = document.getElementById('time');
         Matter.Events.on(engine, 'afterUpdate', () => {
-            const canvas = document.querySelector('canvas');
-            canvas.style.background = 'radial-gradient(circle at ' +
-                lamp.position.x + 'px ' + lamp.position.y + 'px, ' +
-                'rgba(255, 255, 255, 0.3) 0%, ' + // Weißer Lichtkern
-                'rgba(50, 50, 50, 0.5) 50%, ' + // Grauton (optional)
-                'rgba(0, 0, 0, 1) 80%)'; // Schwarz
+            if (canvas && lamp.position) {
+                // Lichtkegel mit eingeschränkter Farbpalette
+                canvas.style.background = 'radial-gradient(circle at ' +
+                    lamp.position.x + 'px ' + lamp.position.y + 'px, ' +
+                    'rgba(100, 200, 255, 1) 0%, ' +     // Accent color: cool blue
+                    'rgba(100, 200, 255, 0.8) 8%, ' +   
+                    'rgba(100, 200, 255, 0.6) 15%, ' +  
+                    'rgba(128, 128, 128, 0.4) 25%, ' +  // Single gray tone
+                    'rgba(0, 0, 0, 0.8) 35%, ' +        // Black
+                    'rgba(0, 0, 0, 1) 45%)';            
+
+                // Korrigierte Distanzberechnung
+                const watchFrame = document.querySelector('.watch-frame');
+                const watchRect = watchFrame.getBoundingClientRect();
+                const timeRect = timeElement.getBoundingClientRect();
+                
+                // Relative Position innerhalb des Watch-Frames berechnen
+                const timeX = timeRect.left - watchRect.left + timeRect.width / 2;
+                const timeY = timeRect.top - watchRect.top + timeRect.height / 2;
+                
+                const distance = Math.sqrt(
+                    Math.pow(lamp.position.x - timeX, 2) +
+                    Math.pow(lamp.position.y - timeY, 2)
+                );
+
+                // Größere maximale Distanz und sanfterer Übergang
+                const maxDistance = 150;
+                const opacity = Math.pow(1 - distance / maxDistance, 2);
+                
+                if (distance < maxDistance) {
+                    timeElement.style.opacity = opacity;
+                    timeElement.style.color = 'white';  // Changed to white
+                    timeElement.style.textShadow = `0 0 10px rgba(100, 200, 255, ${opacity * 0.7})`; // Blue glow
+                } else {
+                    timeElement.style.opacity = '0';
+                }
+            }
         });
     </script>
 </body>

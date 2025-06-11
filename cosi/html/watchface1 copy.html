@@ -21,6 +21,7 @@
 </head>
 <body>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.17.1/matter.min.js"></script>
   <script>
     let orbitRadii = [150, 120, 90, 60];
     let orbits = [];
@@ -34,17 +35,57 @@
 
     const CANVAS_SIZE = 400;
 
+    // Matter.js setup
+    const Engine = Matter.Engine;
+    const Render = Matter.Render;
+    const World = Matter.World;
+    const Bodies = Matter.Bodies;
+    const Body = Matter.Body;
+    const Constraint = Matter.Constraint;
+
+    let engine;
+    let world;
+    let planetBodies = []; // Array to store all physical planet bodies
+
     function setup() {
       createCanvas(CANVAS_SIZE, CANVAS_SIZE);
       angleMode(RADIANS);
       frameRate(60);
 
+      // Setup Matter.js
+      engine = Engine.create();
+      world = engine.world;
+      engine.world.gravity.y = 0;
+
+      // Initialize orbits and planets
       for (let i = 0; i < 4; i++) {
         orbits.push({ count: 0, angles: [], offset: random(TWO_PI) });
+        planetBodies[i] = [];
       }
+
+      // Create walls
+      const walls = [
+        Bodies.rectangle(width / 2, 0, width, 10, { isStatic: true }),
+        Bodies.rectangle(width / 2, height, width, 10, { isStatic: true }),
+        Bodies.rectangle(0, height / 2, 10, height, { isStatic: true }),
+        Bodies.rectangle(width, height / 2, 10, height, { isStatic: true })
+      ];
+      World.add(world, walls);
 
       updateTime();
       setInterval(updateTime, 1000);
+    }
+
+    function createPlanet(x, y, index) {
+      const planet = Bodies.circle(x, y, 4, {
+        restitution: 0.8,
+        friction: 0.1,
+        collisionFilter: {
+          group: -index // Prevent collision between planets in same orbit
+        }
+      });
+      World.add(world, planet);
+      return planet;
     }
 
     function draw() {
@@ -89,31 +130,31 @@
     }
 
     function updateTime() {
-  let h = hour();
-  let m = minute();
-  let s = second();
-  currentSecond = s;
+      let h = hour();
+      let m = minute();
+      let s = second();
+      currentSecond = s;
 
-  let digits = [int(h / 10), h % 10, int(m / 10), m % 10];
+      let digits = [int(h / 10), h % 10, int(m / 10), m % 10];
 
-  for (let i = 0; i < 4; i++) {
-    let count = digits[i];
-    orbits[i].count = count;
+      for (let i = 0; i < 4; i++) {
+        let count = digits[i];
+        orbits[i].count = count;
 
-    let angleStep = TWO_PI / max(count, 1);
+        let angleStep = TWO_PI / max(count, 1);
 
-    // vorhandene Winkel beibehalten, aber ergänzen oder kürzen
-    if (orbits[i].angles.length < count) {
-      // hinzufügen
-      for (let j = orbits[i].angles.length; j < count; j++) {
-        orbits[i].angles.push(j * angleStep);
+        // vorhandene Winkel beibehalten, aber ergänzen oder kürzen
+        if (orbits[i].angles.length < count) {
+          // hinzufügen
+          for (let j = orbits[i].angles.length; j < count; j++) {
+            orbits[i].angles.push(j * angleStep);
+          }
+        } else if (orbits[i].angles.length > count) {
+          // kürzen
+          orbits[i].angles.splice(count);
+        }
       }
-    } else if (orbits[i].angles.length > count) {
-      // kürzen
-      orbits[i].angles.splice(count);
     }
-  }
-}
 
     function drawOrbits() {
       noFill();

@@ -1,62 +1,165 @@
+// Matter.js Module
+// const Matter = require('matter-js');
+const Engine = Matter.Engine;
+const Render = Matter.Render;
+const World = Matter.World;
+const Bodies = Matter.Bodies;
+const Body = Matter.Body;
+
 // Globale Variablen
-let orbitRadii = [150, 120, 90, 60];
+const CANVAS_WIDTH = 396;  // Apple Watch Breite
+const CANVAS_HEIGHT = 484; // Apple Watch Höhe
+let orbitRadii = [150, 120, 90, 60]; // [m2, m1, h2, h1] - kleinere Radien
 let orbits = [];
 let orbitSpeed = 0.005;
 let minOrbitSpeed = 0.002;
-let centerX = 0, centerY = 0;
+let centerX = CANVAS_WIDTH / 2, centerY = CANVAS_HEIGHT / 2;
 let freedPlanets = [];
 let freedOrbits = [];
 let particles = [];
+let physicalParticles = [];
 let currentSecond = 0;
-const CANVAS_SIZE = 400;
+let engine;
+let render;
+let physicalOrbits = [];
 
 function setup() {
-  createCanvas(CANVAS_SIZE, CANVAS_SIZE);
-  angleMode(RADIANS);
-  frameRate(60);
+    // p5.js setup
+    createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
+    angleMode(RADIANS);
+    frameRate(60);
+    
+    centerX = width / 2;
+    centerY = height / 2;
 
-  // Orbits initialisieren
-  for (let i = 0; i < 4; i++) {
-    orbits.push({ count: 0, angles: [], offset: random(TWO_PI) });
-  }
+    // Matter.js setup
+    engine = Engine.create({
+        gravity: { x: 0, y: 0 }
+    });
+    
+    // Initialize orbits array
+    for (let i = 0; i < 4; i++) {
+        orbits.push({ 
+            count: 0, 
+            angles: [], 
+            offset: random(TWO_PI) 
+        });
+    }
+    
+    // Create physical orbits
+    orbitRadii.forEach((radius, index) => {
+        const orbit = createPhysicalOrbit(radius, index);
+        physicalOrbits.push(orbit);
+        World.add(engine.world, orbit);
+    });
 
-  updateTime();
-  setInterval(updateTime, 1000);
+    // Create walls
+    const walls = [
+        Bodies.rectangle(centerX, -10, width, 20, { 
+            isStatic: true,
+            restitution: 0.8 
+        }),
+        Bodies.rectangle(centerX, height + 10, width, 20, { 
+            isStatic: true,
+            restitution: 0.8 
+        }),
+        Bodies.rectangle(-10, centerY, 20, height, { 
+            isStatic: true,
+            restitution: 0.8 
+        }),
+        Bodies.rectangle(width + 10, centerY, 20, height, { 
+            isStatic: true,
+            restitution: 0.8 
+        })
+    ];
+    World.add(engine.world, walls);
+
+    // Start Matter.js engine
+    Engine.run(engine);
+    
+    // Initial time update
+    updateTime();
+    setInterval(updateTime, 1000);
 }
 
 function draw() {
-  background(0);
-  handleInput();
-  applyInertia();
+    background(0);
+    
+    push();
+    translate(centerX, centerY);
+    
+    // Draw elements
+    drawOrbits();
+    drawPlanets();
+    updateFreedPlanets();
+    updateParticles();
+    drawSeconds();
+    
+    // Handle physics
+    Engine.update(engine);
+    handleInput();
+    applyInertia();
+    updateFreedOrbits();
+    
+    pop();
+    
+    drawWatchFrame();
+}
 
-  // Orbits "befreien" bei hoher Geschwindigkeit
-  if (abs(orbitSpeed) > 0.13 && freedOrbits.length === 0) {
-    for (let i = 0; i < orbitRadii.length; i++) {
-      let angle = random(TWO_PI);
-      freedOrbits.push({
-        x: width / 2,
-        y: height / 2,
-        r: orbitRadii[i],
-        vx: cos(angle) * 3,
-        vy: sin(angle) * 3,
-        id: i
-      });
+function createPhysicalOrbit(radius, index) {
+  return Bodies.circle(centerX, centerY, radius, {
+    isStatic: true,
+    render: {
+      fillStyle: 'transparent',
+      strokeStyle: '#646464',
+      lineWidth: 1
+    },
+    id: index,
+    friction: 0.1,
+    restitution: 0.6,
+    collisionFilter: {
+      category: 0x0002,
+      mask: 0x0001
     }
-  }
+  });
+}
 
-  updateFreedOrbits();
-  translate(centerX, centerY);
-
-  drawOrbits();
-  drawPlanets();
-  updateFreedPlanets();
-  updateParticles();
-  drawSeconds();
+function createPhysicalParticle(x, y, vx, vy) {
+    return Bodies.circle(x, y, 1, {
+        restitution: 0.8,
+        friction: 0.1,
+        mass: 0.1, // Light particles
+        render: {
+            fillStyle: '#FFFF64',
+            opacity: 0.8
+        }
+    });
 }
 
 function handleInput() {
-  if (keyIsDown(87)) orbitSpeed += 0.0004; // W-Taste
-  if (keyIsDown(83)) orbitSpeed -= 0.0004; // S-Taste
+    if (keyIsDown(87)) { // W-Taste
+        orbitSpeed += 0.0004;
+        // Release orbits at high speed
+        if (abs(orbitSpeed) > 0.13 && freedOrbits.length === 0) {
+            physicalOrbits.forEach((orbit, index) => {
+                Body.setStatic(orbit, false);
+                let angle = random(TWO_PI);
+                freedOrbits.push({
+                    id: index,
+                    x: centerX,
+                    y: centerY,
+                    r: orbitRadii[index],
+                    vx: cos(angle) * 3,
+                    vy: sin(angle) * 3
+                });
+                Body.setVelocity(orbit, {
+                    x: cos(angle) * 3,
+                    y: sin(angle) * 3
+                });
+            });
+        }
+    }
+    if (keyIsDown(83)) orbitSpeed -= 0.0004; // S-Taste
 }
 
 function applyInertia() {
@@ -72,7 +175,13 @@ function updateTime() {
   let s = second();
   currentSecond = s;
 
-  let digits = [int(h / 10), h % 10, int(m / 10), m % 10];
+  // Reihenfolge der Digits: m2, m1, h2, h1 (außen nach innen)
+  let digits = [
+    m % 10,      
+    int(m / 10), 
+    h % 10,      
+    int(h / 10)  
+  ];
 
   for (let i = 0; i < 4; i++) {
     let count = digits[i];
@@ -96,117 +205,153 @@ function drawOrbits() {
   strokeWeight(1);
   if (freedOrbits.length === 0) {
     for (let i = 0; i < orbitRadii.length; i++) {
-      ellipse(width / 2, height / 2, orbitRadii[i] * 2);
+      ellipse(0, 0, orbitRadii[i] * 2); // Zentriert um 0,0 wegen translate
     }
   } else {
     for (let o of freedOrbits) {
-      ellipse(o.x, o.y, o.r * 2);
+      ellipse(o.x - width / 2, o.y - height / 2, o.r * 2);
     }
   }
 }
 
 function drawPlanets() {
-  noStroke();
-  for (let i = 0; i < 4; i++) {
-    let orbit = orbits[i];
-    let base = freedOrbits.find(o => o.id === i) || { x: width / 2, y: height / 2, r: orbitRadii[i] };
-
-    for (let j = 0; j < orbit.count; j++) {
-      let angle = orbit.angles[j];
-      let x = base.x + cos(angle + orbit.offset) * base.r;
-      let y = base.y + sin(angle + orbit.offset) * base.r;
-
-      if (abs(orbitSpeed) > 0.13) {
-        let vx = cos(angle + orbit.offset) * orbitSpeed * 30;
-        let vy = sin(angle + orbit.offset) * orbitSpeed * 30;
-        freedPlanets.push({ x, y, vx, vy, life: 255 });
-        continue;
-      }
-
-      if (abs(orbitSpeed) > 0.08) {
-        fill(255, 255, 100);
-        ellipse(x, y, 8);
-        for (let k = 0; k < 5; k++) {
-          particles.push({
-            x: x,
-            y: y,
-            vx: random(-1, 1),
-            vy: random(-1, 1),
-            alpha: 255
-          });
+    noStroke();
+    for (let i = 0; i < 4; i++) {
+        let orbit = orbits[i];
+        let base;
+        
+        if (freedOrbits.length > 0) {
+            let freedOrbit = freedOrbits.find(o => o.id === i);
+            base = {
+                x: freedOrbit.x - centerX,
+                y: freedOrbit.y - centerY,
+                r: orbitRadii[i]
+            };
+        } else {
+            base = {
+                x: 0,
+                y: 0,
+                r: orbitRadii[i]
+            };
         }
-      } else {
-        fill(255);
-        ellipse(x, y, 8);
-      }
 
-      orbit.angles[j] += orbitSpeed;
+        for (let j = 0; j < orbit.count; j++) {
+            let angle = orbit.angles[j];
+            let x = base.x + cos(angle + orbit.offset) * base.r;
+            let y = base.y + sin(angle + orbit.offset) * base.r;
+
+            if (abs(orbitSpeed) > 0.13) {
+                let vx = cos(angle + orbit.offset) * orbitSpeed * 30;
+                let vy = sin(angle + orbit.offset) * orbitSpeed * 30;
+                freedPlanets.push({ 
+                    x: x, 
+                    y: y, 
+                    vx, 
+                    vy, 
+                    life: 255 
+                });
+                
+                fill(255, 255, 100);
+                ellipse(x, y, 8);
+                continue;
+            }
+
+            if (abs(orbitSpeed) > 0.08) {
+                fill(255, 255, 100);
+                ellipse(x, y, 8);
+                // Create physical particles instead of visual ones
+                for (let k = 0; k < 5; k++) {
+                    const particle = createPhysicalParticle(
+                        x + centerX, 
+                        y + centerY,
+                        random(-1, 1) * 3,
+                        random(-1, 1) * 3
+                    );
+                    physicalParticles.push({
+                        body: particle,
+                        life: 255
+                    });
+                    World.add(engine.world, particle);
+                }
+            } else {
+                fill(255);
+                ellipse(x, y, 8);
+            }
+
+            orbit.angles[j] += orbitSpeed;
+        }
     }
-  }
 }
 
 function updateFreedPlanets() {
+  push();
+  translate(centerX, centerY);
+
   for (let i = freedPlanets.length - 1; i >= 0; i--) {
     let p = freedPlanets[i];
+    
+    // Update position with velocity
     p.x += p.vx;
     p.y += p.vy;
 
-    if (p.x < 0 || p.x > width) {
+    // Apply boundaries relative to center
+    const maxX = width/2;
+    const maxY = height/2;
+    
+    if (p.x < -maxX || p.x > maxX) {
       p.vx *= -0.9;
-      p.x = constrain(p.x, 0, width);
+      p.x = constrain(p.x, -maxX, maxX);
     }
-    if (p.y < 0 || p.y > height) {
+    if (p.y < -maxY || p.y > maxY) {
       p.vy *= -0.9;
-      p.y = constrain(p.y, 0, height);
+      p.y = constrain(p.y, -maxY, maxY);
     }
 
+    // Draw with fade out
     fill(255, 255, 100, p.life);
     ellipse(p.x, p.y, 6);
     p.life -= 3;
 
     if (p.life <= 0) freedPlanets.splice(i, 1);
   }
+
+  pop();
 }
 
 function updateFreedOrbits() {
-  for (let i = 0; i < freedOrbits.length; i++) {
-    let o = freedOrbits[i];
-    o.x += o.vx;
-    o.y += o.vy;
-
-    if (o.x - o.r < 0 || o.x + o.r > width) {
-      o.vx *= -0.8;
-      o.x = constrain(o.x, o.r, width - o.r);
+    if (abs(orbitSpeed) < 0.05 && freedOrbits.length > 0) {
+        physicalOrbits.forEach(orbit => {
+            Body.setStatic(orbit, true);
+            Body.setPosition(orbit, { 
+                x: centerX, 
+                y: centerY 
+            });
+            Body.setVelocity(orbit, { x: 0, y: 0 });
+        });
+        freedOrbits = []; // Clear freed orbits when resetting
     }
-    if (o.y - o.r < 0 || o.y + o.r > height) {
-      o.vy *= -0.8;
-      o.y = constrain(o.y, o.r, height - o.r);
-    }
-  }
-
-  if (abs(orbitSpeed) < 0.05 && freedOrbits.length > 0) {
-    freedOrbits = [];
-  }
 }
 
 function updateParticles() {
-  for (let i = particles.length - 1; i >= 0; i--) {
-    let p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.alpha -= 5;
-
-    fill(255, 255, 100, p.alpha);
-    ellipse(p.x, p.y, 2);
-
-    if (p.alpha <= 0) particles.splice(i, 1);
-  }
+    for (let i = physicalParticles.length - 1; i >= 0; i--) {
+        let p = physicalParticles[i];
+        p.life -= 5;
+        
+        if (p.life <= 0) {
+            World.remove(engine.world, p.body);
+            physicalParticles.splice(i, 1);
+        } else {
+            // Update opacity based on life
+            p.body.render.opacity = p.life / 255;
+        }
+    }
 }
 
 function drawSeconds() {
-  let radius = orbitRadii[0] + 30;
-  let cx = width / 2;
-  let cy = height / 2;
+  // Sekundenring als äußerster Ring
+  let radius = 130; // Fester Radius für Sekunden, größer als alle anderen
+  let cx = 0;
+  let cy = 0;
 
   for (let i = 0; i < 60; i++) {
     let angle = TWO_PI * (i / 60) - HALF_PI;
@@ -225,4 +370,19 @@ function drawSeconds() {
   }
 }
 
-//test
+// Neue Funktion für den Watch-Rahmen
+function drawWatchFrame() {
+  // Äußerer Rahmen
+  noFill();
+  stroke(80);
+  strokeWeight(3);
+  rect(0, 0, width, height, 90); // Abgerundete Ecken
+
+  // Digital Crown Andeutung
+  fill(80);
+  noStroke();
+  rect(width - 8, height / 2 - 20, 8, 40, 5, 0, 0, 5);
+  
+  // Seitentaste
+  rect(width - 8, height / 2 + 40, 8, 30, 5, 0, 0, 5);
+}

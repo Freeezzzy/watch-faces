@@ -12,15 +12,29 @@
       align-items: center;
       height: 100vh;
       overflow: hidden;
-      border: 10px solid #444;
+    }
+    .watch-frame {
+      width: 396px;
+      height: 484px;
+      border-radius: 90px;
+      background: black;
+      position: relative;
+      box-shadow: 0 0 20px rgba(68, 68, 68, 0.5);
     }
     canvas {
       display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
     }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
   <script src="abstract-planet-watchface.js"></script>
 </head>
 <body>
+  <div class="watch-frame">
+    <!-- Canvas elements will be created here by p5.js and Matter.js -->
+  </div>
 </body>
 </html>
