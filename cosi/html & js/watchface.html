@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Abstraktes Watchface</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
+  <script>
+    const { Engine, Render, World, Bodies, Body, Constraint, Composite, Mouse, MouseConstraint } = Matter;
+
+    // Engine mit Physik-Parametern
+    const engine = Engine.create({
+      gravity: { x: 0, y: 0 },
+      friction: 0.01
+    });
+    const world = engine.world;
+
+    // Renderer
+    const render = Render.create({
+      element: document.body,
+      engine: engine,
+      options: {
+        width: 300,
+        height: 300,
+        wireframes: false,
+        background: 'rgba(0,0,0,0)'
+      }
+    });
+
+    // Chaotische Fäden
+    const threads = [];
+    const threadCount = 18;
+    const accentColor = '#ff4d6d'; // Akzentfarbe
+
+    function createThread() {
+      const angle = Math.random() * Math.PI * 2;
+      const length = 80 + Math.random() * 80;
+      const x = 150 + Math.cos(angle) * length/2;
+      const y = 150 + Math.sin(angle) * length/2;
+      
+      const thread = Bodies.rectangle(x, y, length, 0.3, {
+        angle: angle,
+        friction: 0.001,
+        render: { fillStyle: 'rgba(255,255,255,0.7)' },
+        collisionFilter: { group: -1 }
+      });
+      
+      const constraint = Constraint.create({
+        pointA: { x: 150, y: 150 },
+        bodyB: thread,
+        stiffness: 0.005,
+        render: { visible: false }
+      });
+      
+      return { body: thread, constraint: constraint, health: 1 };
+    }
+
+    // Fäden initialisieren
+    for (let i = 0; i < threadCount; i++) {
+      const thread = createThread();
+      threads.push(thread);
+      World.add(world, [thread.body, thread.constraint]);
+    }
+
+    // Zeiger
+    const hands = {
+      hour: Bodies.rectangle(150, 150, 70, 3.5, {
+        isStatic: true,
+        render: { fillStyle: '#fff' }
+      }),
+      minute: Bodies.rectangle(150, 150, 100, 2.5, {
+        isStatic: true,
+        render: { fillStyle: '#fff' }
+      }),
+      second: Bodies.rectangle(150, 150, 120, 1, {
+        isStatic: true,
+        render: { fillStyle: accentColor }
+      })
+    };
+    World.add(world, Object.values(hands));
+
+    // Kollisionslogik
+    Matter.Events.on(engine, 'collisionStart', (event) => {
+      event.pairs.forEach(pair => {
+        threads.forEach(thread => {
+          if ([pair.bodyA, pair.bodyB].includes(thread.body)) {
+            thread.health -= 0.2;
+            thread.body.render.fillStyle = thread.health <= 0 
+              ? accentColor 
+              : `rgba(255,255,255,${0.7 * thread.health})`;
+            if (thread.health <= 0) World.remove(world, thread.constraint);
+          }
+        });
+      });
+    });
+
+    // Zeiger-Animation
+    function updateHands() {
+      const now = new Date();
+      const h = (now.getHours() % 12) * Math.PI / 6;
+      const m = now.getMinutes() * Math.PI / 30;
+      const s = now.getSeconds() * Math.PI / 30;
+      
+      Body.setAngle(hands.hour, h + m/12);
+      Body.setAngle(hands.minute, m + s/60);
+      Body.setAngle(hands.second, s);
+      
+      // Fäden regenerieren (zufällig)
+      if (now.getSeconds() % 15 === 0 && Math.random() > 0.8) {
+        threads.forEach(thread => {
+          if (thread.health <= 0) {
+            const newThread = createThread();
+            Object.assign(thread, newThread);
+            World.add(world, [thread.body, thread.constraint]);
+          }
+        });
+      }
+      
+      requestAnimationFrame(updateHands);
+    }
+
+    // Start
+    Engine.run(engine);
+    Render.run(render);
+    updateHands();
+  </script>
+</body>
+</html>
