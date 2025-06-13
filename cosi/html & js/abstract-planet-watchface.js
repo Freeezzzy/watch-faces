@@ -10,6 +10,7 @@ const Body = Matter.Body;
 const CANVAS_WIDTH = 396;  // Apple Watch Breite
 const CANVAS_HEIGHT = 484; // Apple Watch Höhe
 let orbitRadii = [150, 120, 90, 60]; // [m2, m1, h2, h1] - kleinere Radien
+const SECONDS_RADIUS = 180; // Outer ring for seconds
 let orbits = [];
 let orbitSpeed = 0.005;
 let minOrbitSpeed = 0.002;
@@ -24,7 +25,6 @@ let render;
 let physicalOrbits = [];
 
 function setup() {
-    // p5.js setup
     createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
     angleMode(RADIANS);
     frameRate(60);
@@ -37,73 +37,25 @@ function setup() {
         gravity: { x: 0, y: 0 }
     });
     
-    // Initialize orbits array
-    for (let i = 0; i < 4; i++) {
-        orbits.push({ 
-            count: 0, 
-            angles: [], 
-            offset: random(TWO_PI) 
-        });
-    }
-    
     // Create physical orbits
-    orbitRadii.forEach((radius, index) => {
-        const orbit = createPhysicalOrbit(radius, index);
+    for (let i = 0; i < 4; i++) {
+        orbits.push({ count: 0, angles: [], offset: random(TWO_PI) });
+        const orbit = createPhysicalOrbit(orbitRadii[i], i);
         physicalOrbits.push(orbit);
         World.add(engine.world, orbit);
-    });
+    }
 
     // Create walls
     const walls = [
-        Bodies.rectangle(centerX, -10, width, 20, { 
-            isStatic: true,
-            restitution: 0.8 
-        }),
-        Bodies.rectangle(centerX, height + 10, width, 20, { 
-            isStatic: true,
-            restitution: 0.8 
-        }),
-        Bodies.rectangle(-10, centerY, 20, height, { 
-            isStatic: true,
-            restitution: 0.8 
-        }),
-        Bodies.rectangle(width + 10, centerY, 20, height, { 
-            isStatic: true,
-            restitution: 0.8 
-        })
+        Bodies.rectangle(width/2, 0, width, 20, { isStatic: true }),
+        Bodies.rectangle(width/2, height, width, 20, { isStatic: true }),
+        Bodies.rectangle(0, height/2, 20, height, { isStatic: true }),
+        Bodies.rectangle(width, height/2, 20, height, { isStatic: true })
     ];
     World.add(engine.world, walls);
 
-    // Start Matter.js engine
-    Engine.run(engine);
-    
-    // Initial time update
     updateTime();
     setInterval(updateTime, 1000);
-}
-
-function draw() {
-    background(0);
-    
-    push();
-    translate(centerX, centerY);
-    
-    // Draw elements
-    drawOrbits();
-    drawPlanets();
-    updateFreedPlanets();
-    updateParticles();
-    drawSeconds();
-    
-    // Handle physics
-    Engine.update(engine);
-    handleInput();
-    applyInertia();
-    updateFreedOrbits();
-    
-    pop();
-    
-    drawWatchFrame();
 }
 
 function createPhysicalOrbit(radius, index) {
@@ -136,37 +88,57 @@ function createPhysicalParticle(x, y, vx, vy) {
     });
 }
 
+function createPhysicalPlanet(x, y, vx, vy) {
+    const planet = Bodies.circle(x, y, 4, {
+        restitution: 0.8,
+        friction: 0.1,
+        mass: 1
+    });
+    Body.setVelocity(planet, { x: vx, y: vy });
+    World.add(engine.world, planet);
+    return planet;
+}
+
 function handleInput() {
-    if (keyIsDown(87)) { // W-Taste
+    if (keyIsDown(87)) { // W key
         orbitSpeed += 0.0004;
         // Release orbits at high speed
         if (abs(orbitSpeed) > 0.13 && freedOrbits.length === 0) {
-            physicalOrbits.forEach((orbit, index) => {
-                Body.setStatic(orbit, false);
+            for (let i = 0; i < orbitRadii.length; i++) {
                 let angle = random(TWO_PI);
                 freedOrbits.push({
-                    id: index,
+                    id: i,
                     x: centerX,
                     y: centerY,
-                    r: orbitRadii[index],
+                    r: orbitRadii[i],
                     vx: cos(angle) * 3,
                     vy: sin(angle) * 3
                 });
-                Body.setVelocity(orbit, {
-                    x: cos(angle) * 3,
-                    y: sin(angle) * 3
-                });
-            });
+                
+                // Create physical planets when breaking free
+                let currentPlanet = createPhysicalPlanet(
+                    centerX + cos(angle) * orbitRadii[i],
+                    centerY + sin(angle) * orbitRadii[i],
+                    cos(angle) * 3,
+                    sin(angle) * 3
+                );
+                freedPlanets.push({ body: currentPlanet, life: 255 });
+            }
         }
     }
-    if (keyIsDown(83)) orbitSpeed -= 0.0004; // S-Taste
+    if (keyIsDown(83)) { // S key
+        orbitSpeed -= 0.0004;
+    }
 }
 
 function applyInertia() {
-  if (!keyIsDown(87) && !keyIsDown(83)) {
-    if (orbitSpeed > minOrbitSpeed) orbitSpeed -= 0.0003;
-    else if (orbitSpeed < -minOrbitSpeed) orbitSpeed += 0.0003;
-  }
+    if (!keyIsDown(87) && !keyIsDown(83)) {
+        if (orbitSpeed > minOrbitSpeed) {
+            orbitSpeed -= 0.0003;
+        } else if (orbitSpeed < -minOrbitSpeed) {
+            orbitSpeed += 0.0003;
+        }
+    }
 }
 
 function updateTime() {
@@ -218,22 +190,11 @@ function drawPlanets() {
     noStroke();
     for (let i = 0; i < 4; i++) {
         let orbit = orbits[i];
-        let base;
-        
-        if (freedOrbits.length > 0) {
-            let freedOrbit = freedOrbits.find(o => o.id === i);
-            base = {
-                x: freedOrbit.x - centerX,
-                y: freedOrbit.y - centerY,
-                r: orbitRadii[i]
-            };
-        } else {
-            base = {
-                x: 0,
-                y: 0,
-                r: orbitRadii[i]
-            };
-        }
+        let base = freedOrbits.find(o => o.id === i) || { 
+            x: 0, 
+            y: 0, 
+            r: orbitRadii[i] 
+        };
 
         for (let j = 0; j < orbit.count; j++) {
             let angle = orbit.angles[j];
@@ -243,35 +204,24 @@ function drawPlanets() {
             if (abs(orbitSpeed) > 0.13) {
                 let vx = cos(angle + orbit.offset) * orbitSpeed * 30;
                 let vy = sin(angle + orbit.offset) * orbitSpeed * 30;
-                freedPlanets.push({ 
-                    x: x, 
-                    y: y, 
-                    vx, 
-                    vy, 
-                    life: 255 
-                });
-                
-                fill(255, 255, 100);
-                ellipse(x, y, 8);
+                // Create physical planet instead of visual one
+                const physicalPlanet = createPhysicalPlanet(x + centerX, y + centerY, vx, vy);
+                freedPlanets.push({ body: physicalPlanet, life: 255 });
                 continue;
             }
 
             if (abs(orbitSpeed) > 0.08) {
                 fill(255, 255, 100);
                 ellipse(x, y, 8);
-                // Create physical particles instead of visual ones
+                // Create visual particles instead of physical ones
                 for (let k = 0; k < 5; k++) {
-                    const particle = createPhysicalParticle(
-                        x + centerX, 
-                        y + centerY,
-                        random(-1, 1) * 3,
-                        random(-1, 1) * 3
-                    );
-                    physicalParticles.push({
-                        body: particle,
-                        life: 255
+                    particles.push({
+                        x: x,
+                        y: y,
+                        vx: random(-1, 1),
+                        vy: random(-1, 1),
+                        alpha: 255
                     });
-                    World.add(engine.world, particle);
                 }
             } else {
                 fill(255);
@@ -284,38 +234,21 @@ function drawPlanets() {
 }
 
 function updateFreedPlanets() {
-  push();
-  translate(centerX, centerY);
-
-  for (let i = freedPlanets.length - 1; i >= 0; i--) {
-    let p = freedPlanets[i];
+    Engine.update(engine);
     
-    // Update position with velocity
-    p.x += p.vx;
-    p.y += p.vy;
+    for (let i = freedPlanets.length - 1; i >= 0; i--) {
+        let p = freedPlanets[i];
+        const pos = p.body.position;
+        
+        fill(255, 255, 100, p.life);
+        ellipse(pos.x - centerX, pos.y - centerY, 6);
+        p.life -= 3;
 
-    // Apply boundaries relative to center
-    const maxX = width/2;
-    const maxY = height/2;
-    
-    if (p.x < -maxX || p.x > maxX) {
-      p.vx *= -0.9;
-      p.x = constrain(p.x, -maxX, maxX);
+        if (p.life <= 0) {
+            World.remove(engine.world, p.body);
+            freedPlanets.splice(i, 1);
+        }
     }
-    if (p.y < -maxY || p.y > maxY) {
-      p.vy *= -0.9;
-      p.y = constrain(p.y, -maxY, maxY);
-    }
-
-    // Draw with fade out
-    fill(255, 255, 100, p.life);
-    ellipse(p.x, p.y, 6);
-    p.life -= 3;
-
-    if (p.life <= 0) freedPlanets.splice(i, 1);
-  }
-
-  pop();
 }
 
 function updateFreedOrbits() {
@@ -332,42 +265,42 @@ function updateFreedOrbits() {
     }
 }
 
+// Update updateParticles() to handle visual particles
 function updateParticles() {
-    for (let i = physicalParticles.length - 1; i >= 0; i--) {
-        let p = physicalParticles[i];
-        p.life -= 5;
-        
-        if (p.life <= 0) {
-            World.remove(engine.world, p.body);
-            physicalParticles.splice(i, 1);
-        } else {
-            // Update opacity based on life
-            p.body.render.opacity = p.life / 255;
-        }
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 5;
+
+        fill(255, 255, 100, p.alpha);
+        ellipse(p.x, p.y, 2);
+
+        if (p.alpha <= 0) particles.splice(i, 1);
     }
 }
 
 function drawSeconds() {
-  // Sekundenring als äußerster Ring
-  let radius = 130; // Fester Radius für Sekunden, größer als alle anderen
-  let cx = 0;
-  let cy = 0;
+    // Move seconds ring outside
+    let radius = SECONDS_RADIUS;
+    let cx = 0;
+    let cy = 0;
 
-  for (let i = 0; i < 60; i++) {
-    let angle = TWO_PI * (i / 60) - HALF_PI;
-    let x = cx + cos(angle) * radius;
-    let y = cy + sin(angle) * radius;
+    for (let i = 0; i < 60; i++) {
+        let angle = TWO_PI * (i / 60) - HALF_PI;
+        let x = cx + cos(angle) * radius;
+        let y = cy + sin(angle) * radius;
 
-    let pulse = 1.5 + sin(frameCount * 0.1 + i) * 1.5;
+        let pulse = 1.5 + sin(frameCount * 0.1 + i) * 1.5;
 
-    if (i === currentSecond) {
-      fill(255, 255, 100);
-      ellipse(x, y, 5 + pulse);
-    } else {
-      fill(120);
-      ellipse(x, y, 3 + pulse * 0.5);
+        if (i === currentSecond) {
+            fill(255, 255, 100);
+            ellipse(x, y, 5 + pulse);
+        } else {
+            fill(120);
+            ellipse(x, y, 3 + pulse * 0.5);
+        }
     }
-  }
 }
 
 // Neue Funktion für den Watch-Rahmen
@@ -385,4 +318,25 @@ function drawWatchFrame() {
   
   // Seitentaste
   rect(width - 8, height / 2 + 40, 8, 30, 5, 0, 0, 5);
+}
+
+function draw() {
+    background(0);
+    
+    handleInput();
+    applyInertia();
+    Engine.update(engine);
+
+    push();
+    translate(centerX, centerY);
+    
+    drawOrbits();
+    drawPlanets();
+    updateFreedPlanets();
+    updateParticles();
+    drawSeconds();
+    
+    pop();
+    
+    drawWatchFrame();
 }

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Abstract Planet Watchface</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      border: 10px solid #444; /* grauer Rand für Laptop-Sichtbarkeit */
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  <script>
+    let engine;
+    let world;
+    let planets = [];
+    let orbits = [];
+    let currentSecond = 0;
+    const CANVAS_SIZE = 400;
+
+    let particles = [];
+    let baseRotationSpeed = 0.01;
+    let currentRotationSpeed = baseRotationSpeed;
+
+    // Matter.js modules
+    const Engine = Matter.Engine;
+    const World = Matter.World;
+    const Bodies = Matter.Bodies;
+    const Constraint = Matter.Constraint;
+
+    let orbitRadii = [150, 120, 90, 60];
+    let gravityStrength = 2;
+
+    function setup() {
+      createCanvas(CANVAS_SIZE, CANVAS_SIZE);
+      
+      // Setup Matter.js
+      engine = Engine.create();
+      world = engine.world;
+      engine.world.gravity.y = 0; // No gravity initially
+      
+      // Create orbits as static circular bodies
+      for(let i = 0; i < 4; i++) {
+        let orbit = Bodies.circle(
+          width/2, 
+          height/2, 
+          orbitRadii[i],
+          { isStatic: true, isSensor: true }
+        );
+        World.add(world, orbit);
+        orbits[i] = { body: orbit, planets: [] };
+      }
+
+      // Setup device orientation handling
+      if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientation', handleOrientation);
+      }
+
+      updateTime();
+      setInterval(updateTime, 1000);
+    }
+
+    function keyPressed() {
+      if (key === 'w' || key === 'W') {
+        currentRotationSpeed = baseRotationSpeed * 5;
+        engine.world.gravity.y = -gravityStrength;
+      } else if (key === 's' || key === 'S') {
+        engine.world.gravity.y = gravityStrength;
+      }
+    }
+
+    function keyReleased() {
+      if (key === 'w' || key === 'W') {
+        currentRotationSpeed = baseRotationSpeed;
+        // Gradually slow down planets
+        for(let orbit of orbits) {
+          for(let planet of orbit.planets) {
+            Matter.Body.setVelocity(planet.body, {
+              x: planet.body.velocity.x * 0.5,
+              y: planet.body.velocity.y * 0.5
+            });
+          }
+        }
+      } else if ((key === 'w' || key === 'W') || (key === 's' || key === 'S')) {
+        engine.world.gravity.y = 0;
+      }
+    }
+
+    function handleOrientation(event) {
+      if (keyIsPressed) return; // Don't override keyboard controls
+      let x = event.gamma / 90; // Convert to normalized value (-1 to 1)
+      let y = event.beta / 90;
+      
+      engine.world.gravity.x = x * gravityStrength;
+      engine.world.gravity.y = y * gravityStrength;
+    }
+
+    function draw() {
+      background(0);
+      Engine.update(engine);
+      
+      drawOrbits();
+      updatePlanets();
+      drawSeconds();
+    }
+
+    function updateTime() {
+      let h = hour();
+      let m = minute();
+      let s = second();
+      currentSecond = s;
+
+      let digits = [int(h / 10), h % 10, int(m / 10), m % 10];
+
+      // Update planets for each orbit
+      for(let i = 0; i < 4; i++) {
+        // Remove existing planets
+        for(let planet of orbits[i].planets) {
+          World.remove(world, planet.body);
+        }
+        orbits[i].planets = [];
+
+        // Create new planets
+        let count = digits[i];
+        let angleStep = TWO_PI / Math.max(count, 1);
+        
+        for(let j = 0; j < count; j++) {
+          let angle = j * angleStep;
+          let x = width/2 + cos(angle) * orbitRadii[i];
+          let y = height/2 + sin(angle) * orbitRadii[i];
+          
+          let planet = Bodies.circle(x, y, 4, {
+              friction: 0.01,
+              restitution: 0.8,
+              density: 0.001
+          });
+
+          // Add constraint to keep planet in orbit
+          let constraint = Constraint.create({
+              pointA: { x: width/2, y: height/2 },
+              bodyB: planet,
+              stiffness: 0.03,  // Increased stiffness
+              damping: 0.1,     // Added damping
+              length: orbitRadii[i]
+          });
+
+          World.add(world, [planet, constraint]);
+          orbits[i].planets.push({
+              body: planet,
+              constraint: constraint
+          });
+        }
+      }
+    }
+
+    function drawOrbits() {
+      noFill();
+      stroke(100);
+      strokeWeight(1);
+      for (let i = 0; i < orbitRadii.length; i++) {
+        ellipse(width / 2, height / 2, orbitRadii[i] * 2);
+      }
+    }
+
+    function updatePlanets() {
+      for(let orbit of orbits) {
+        for(let planet of orbit.planets) {
+          let pos = planet.body.position;
+          let velocity = planet.body.velocity;
+          
+          // Add rotation force
+          let angle = Math.atan2(pos.y - height/2, pos.x - width/2);
+          let rotationForce = {
+            x: -Math.sin(angle) * currentRotationSpeed,
+            y: Math.cos(angle) * currentRotationSpeed
+          };
+          Matter.Body.applyForce(planet.body, pos, rotationForce);
+
+          // Create particles when moving fast
+          if (Matter.Vector.magnitude(velocity) > 3) {
+            particles.push({
+              x: pos.x,
+              y: pos.y,
+              life: 255,
+              vel: { x: random(-0.5, 0.5), y: random(-0.5, 0.5) }
+            });
+          }
+
+          // Draw planet
+          fill(255);
+          ellipse(pos.x, pos.y, 8);
+        }
+      }
+
+      // Update and draw particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vel.x;
+        p.y += p.vel.y;
+        p.life -= 5;
+        
+        fill(255, p.life);
+        ellipse(p.x, p.y, 3);
+        
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+    }
+
+    function drawSeconds() {
+      let radius = orbitRadii[0] + 30;
+      let cx = width / 2;
+      let cy = height / 2;
+
+      for (let i = 0; i < 60; i++) {
+        let angle = TWO_PI * (i / 60) - HALF_PI;
+        let x = cx + cos(angle) * radius;
+        let y = cy + sin(angle) * radius;
+
+        // Pulsieren
+        let pulse = 1.5 + sin(frameCount * 0.1 + i) * 1.5;
+
+        if (i === currentSecond) {
+          fill(255, 255, 100);
+          ellipse(x, y, 5 + pulse);
+        } else {
+          fill(120);
+          ellipse(x, y, 3 + pulse * 0.5);
+        }
+      }
+    }
+  </script>
+</body>
+</html>
