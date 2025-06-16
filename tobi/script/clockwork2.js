@@ -25,7 +25,7 @@ function draw() {
 
   // Test: feste Zeit simulieren
   // let h = 11;
-  // let m = 59;x
+  // let m = 59;xx
 
   waterLevel = map(m, 0, 59, minWaterLevel, maxWaterLevel);
   waveAmplitude = 15 + 5 * sin(frameCount * 0.02);
