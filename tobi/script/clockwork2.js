@@ -10,7 +10,7 @@ let bubbles = [];
 let lastSecond = -1;
 
 function setup() {
-  createCanvas(400, 400);
+  createCanvas(960, 960);
   noStroke();
   minWaterLevel = height * 0.95;
   maxWaterLevel = height * 0.05;
