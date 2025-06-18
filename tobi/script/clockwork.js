@@ -1,111 +1,94 @@
-/*  Watch‑Face “Fleet” – Stunden‑ & Minuten‑Schiffe  */
-/*  große = Stunden, kleine = Minuten                */
+/* ===========================================================
+   WATER-CLOCK 400 × 400
+   p5.js  +  (optional) Matter.js   –   SINGLE WATER SURFACE
+   -----------------------------------------------------------
+   • Füllstand wächst linear über 24 h (00 : 00 → leer … 23 : 59 → voll)
+   • Wasseroberfläche bleibt IMMER senkrecht zur Schwerkraft
+     → kippt sofort, ohne Trägheit, wenn du das Handy neigst
+   • KEINE Blasen, KEINE Partikel
+   =========================================================== */
 
-let waveOffset = 0;
-let targetWaterLevel;
-let currentWaterLevel;
+let minLvl, maxLvl;           // untere / obere Pegel-Grenze
+let waveAmp = 18;             // Amplitude der Welle
+let waveLen = 180;            // Wellenlänge   (px)
+let waveSpd = 0.025;          // Wellen­geschw. (rad / Frame)
 
+/* -----------------------------------------------------------
+   p5 INITIALISIERUNG
+----------------------------------------------------------- */
 function setup() {
-  createCanvas(960, 960);
-  textFont('monospace');
-  textSize(48);
-  textAlign(CENTER, CENTER);
+  createCanvas(400, 400);
+  noStroke();
+  minLvl = height * 0.96;     // fast ganz unten
+  maxLvl = height * 0.04;     // fast ganz oben
 
-  // Anfangs­wasserstand setzen
-  targetWaterLevel = calcWaterLevel(minute());
-  currentWaterLevel = targetWaterLevel;
+  /* iOS-Permission für Motion-Sensor */
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    const b = createButton('🎛 Sensor aktivieren').position(10, 10);
+    b.mousePressed(() =>
+      DeviceOrientationEvent.requestPermission()
+        .then(r => { if (r === 'granted') b.remove(); }));
+  }
 }
 
+/* -----------------------------------------------------------
+   p5 ZEICHEN-SCHLEIFE
+----------------------------------------------------------- */
 function draw() {
-  background(0);
+  background(255);
 
-  // Echtzeit‑Werte
-  const h  = hour();
-  const m  = minute();
-  const ms = millis() % 60000;          // 0 – 59999
-  const t  = ms / 60000;                // Fortschritt innerhalb der Minute (0‑1)
+  /* 1 — AKTUELLE SCHWERKRAFT AUS GERÄTE-NEIGUNG
+         rotationX … -180° (Kopf nach oben) → +180° (Kopf nach unten)
+         rotationY …  -90° (rechts hoch)     →  +90° (links  hoch)
+         Wir normalisieren auf -1 … +1                                    */
+  const g = {
+    x: constrain(rotationY / 45, -1, 1),    // links/rechts-Komponente
+    y: constrain(rotationX / 45, -1, 1)     // oben/unten-Komponente
+  };
 
-  /* ---------- Wasserstand & Welle ---------- */
-  targetWaterLevel  = calcWaterLevel(m);
-  currentWaterLevel = lerp(currentWaterLevel, targetWaterLevel, 0.05);
+  /* 2 — WASSER-FÜLLSTAND (24-h-Uhr)                                       */
+  const now      = new Date();
+  const seconds  = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+  const fillFrac = seconds / 86400;                 // 0 … 0.999 …
+  const baseLvl  = lerp(minLvl, maxLvl, fillFrac);  // „ungekippter“ Pegel
 
-  const waveHeight  = 25;
-  const waveLength  = 180;
+  /* 3 — VERTIKALER SHIFT (Gerät nach vorn / hinten kippen)                */
+  //  g.y  +1 → Schwerkraft zeigt nach unten (Wasser tiefer)
+  //  g.y  -1 → Schwerkraft zeigt nach oben  (Wasser höher)
+  const vShift   = g.y * height * 0.45;             // ±45 % der Höhe
+  const lvl      = constrain(baseLvl + vShift, maxLvl, minLvl);
 
-  // Welle zeichnen (weiß)
-  fill(255);
-  noStroke();
+  /* 4 — SLOPE DER OBERFLÄCHE  (Gerät links/rechts kippen)                 */
+  //  Wasseroberfläche steht LOTRECHT zur Schwerkraft → tan(φ) = -gx/gy
+  //  Wenn gy ≈ 0 (Gerät senkrecht gehalten), zwingen wir max. Steigung.
+  const eps   = 0.01;
+  const slope = abs(g.y) < eps ? (g.x > 0 ? -5 : 5)   // fast vertikal
+                               : (-g.x / g.y);        // physikalisch exakt
+
+  /* 5 — WASSERFLÄCHE ZEICHNEN                                             */
+  fill(0, 120, 255);
   beginShape();
   vertex(0, height);
-  for (let x = 0; x <= width; x += 10) {
-    const y = currentWaterLevel + sin((x + waveOffset) / waveLength) * waveHeight;
-    vertex(x, y);
+  vertex(0, lvl);
+
+  for (let x = 0; x <= width; x++) {
+    const tilt = slope * (x - width / 2);            // lineare Neigung
+    const wave = sin((x / waveLen) * TWO_PI + frameCount * waveSpd) * waveAmp;
+    vertex(x, lvl + tilt + wave);
   }
+
   vertex(width, height);
   endShape(CLOSE);
 
-  waveOffset += 1.5;
-
-  /* ---------- Uhrzeit‑Text ---------- */
-  fill(255);
-  text(nf(h, 2) + ':' + nf(m, 2), width / 2, height / 2);
-
-  /* ---------- Schiffs‑Flotte ---------- */
-  drawFleet(h,  60, 1.4, t);   // große Schiffe (Stunden)
-  drawFleet(m,  24, 0.8, t);   // kleine Schiffe (Minuten)
-}
-
-/* ===== Hilfsfunktionen ===== */
-
-function calcWaterLevel(minuteValue) {
-  // 0 min = voll, 59 min = fast leer
-  return map(minuteValue, 0, 59, height * 0.95, height * 0.15);
-}
-
-/**
- * Zeichnet n Schiffe mit bestimmtem Abstand & Größe.
- * spacing    – horizontaler Abstand zwischen Schiffen
- * sizeFactor – Skalierung des Schiffs (1 = Basisgröße)
- * t          – Fortschritt innerhalb der Minute (0‑1)
- */
-function drawFleet(n, spacing, sizeFactor, t) {
-  if (n === 0) return;
-
-  const totalWidth = width + 200 + (n - 1) * spacing;  // Flugbahn­länge
-  for (let i = 0; i < n; i++) {
-    const startX = -100 - i * spacing;                 // Startpunkt links
-    const x      = startX + t * totalWidth;            // lin. Bewegung
-    const yWave  = currentWaterLevel +
-                   sin((x + waveOffset) / 180) * 25;   // auf Welle sitzen
-    drawShip(x, yWave, sizeFactor);
-  }
-}
-
-/**
- * Einfaches Segelschiff
- * sizeFactor steuert gesamte Größe
- */
-function drawShip(cx, cy, sizeFactor = 1) {
-  push();
-  translate(cx, cy);
-  scale(sizeFactor);
-  fill('#A4DDED');
-  stroke('#A4DDED');
-  strokeWeight(2);
-
-  // Rumpf
-  noStroke();
-  beginShape();
-  vertex(-20, 0);
-  vertex( 20, 0);
-  vertex( 10, 10);
-  vertex(-10, 10);
-  endShape(CLOSE);
-
-  // Mast & Segel
-  stroke('#A4DDED');
-  line(0, 0, 0, -20);
-  noStroke();
-  triangle(0, -20, 0, 0, 12, -10);
-  pop();
+  /* 6 — DEBUG-OVERLAY (optional auskommentieren)                           */
+  /*
+  fill(0);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text(`rotX: ${nf(rotationX,2,1)}°\nrotY: ${nf(rotationY,2,1)}°\n`+
+       `g.x : ${nf(g.x,1,2)}\n`+
+       `g.y : ${nf(g.y,1,2)}\n`+
+       `slope: ${nf(slope,1,2)}`, 10, 10);
+  */
 }

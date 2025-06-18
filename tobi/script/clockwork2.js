@@ -10,7 +10,7 @@ let bubbles = [];
 let lastSecond = -1;
 
 function setup() {
-  createCanvas(400, 400);
+  createCanvas(960, 960);
   noStroke();
   minWaterLevel = height * 0.95;
   maxWaterLevel = height * 0.05;
@@ -25,7 +25,7 @@ function draw() {
 
   // Test: feste Zeit simulieren
   // let h = 11;
-  // let m = 59;
+  // let m = 59;xx
 
   waterLevel = map(m, 0, 59, minWaterLevel, maxWaterLevel);
   waveAmplitude = 15 + 5 * sin(frameCount * 0.02);
