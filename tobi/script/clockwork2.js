@@ -9,6 +9,7 @@ let splashes = [];
 let bubbles = [];
 let lastSecond = -1;
 
+
 function setup() {
   createCanvas(960, 960);
   noStroke();
