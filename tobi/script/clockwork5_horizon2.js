@@ -1,234 +1,174 @@
-let Engine = Matter.Engine,
-    World = Matter.World,
-    Bodies = Matter.Bodies,
-    Body = Matter.Body,
-    Vector = Matter.Vector;
+let Engine         = Matter.Engine,
+    World          = Matter.World,
+    Bodies         = Matter.Bodies,
+    Body           = Matter.Body,
+    Events         = Matter.Events;
 
 let engine, world;
-let hourCenter;
-let minutePoints = [];
+let minutePoints    = [];
 let secondParticles = [];
+let sekundenProSekunde = 6;
+let lastSecond      = -1;
 
-let sekundenPartikelProSekunde = 3;
-let lastSecond = -1;
-let lastMinute = -1;
-let activeMinuteIndex = -1;
+const MIN_HOUR_R     = 10;
+const MAX_HOUR_R     = 60;
 
 function setup() {
   createCanvas(960, 960);
   engine = Engine.create();
-  world = engine.world;
+  world  = engine.world;
+
+  // Start ohne Gravitation
+  world.gravity.x = 0;
   world.gravity.y = 0;
 
-  createHourCenter(hour());
-generateMinutePoints(minute());
+  // unsichtbare Wände am Rand
+  let wallOpts = { isStatic: true, restitution: 1.5, friction: 0, label: 'wall' };
+  World.add(world, [
+    Bodies.rectangle(width/2,    -1,        width, 2,    wallOpts),
+    Bodies.rectangle(width/2,    height+1,  width, 2,    wallOpts),
+    Bodies.rectangle(-1,         height/2,  2,     height, wallOpts),
+    Bodies.rectangle(width+1,    height/2,  2,     height, wallOpts)
+  ]);
 
+  generateMinutePoints(minute());
 }
 
 function draw() {
   background(0);
   Engine.update(engine);
 
-  let h = hour();
-  let m = minute();
-  let s = second();
+  let H = hour(),
+      M = minute(),
+      S = second();
 
-  drawHourCenter();
-
-  // Neue Sekundenpartikel pro Sekunde erzeugen
-  if (s !== lastSecond) {
-    for (let i = 0; i < sekundenPartikelProSekunde; i++) {
-      spawnSecondParticle();
+  // Sext spawn verteilt über die Sekunde
+  if (S !== lastSecond) {
+    let t0 = millis();
+    for (let i = 0; i < sekundenProSekunde; i++) {
+      setTimeout(spawnSecondParticle, i * (1000 / sekundenProSekunde));
     }
-    lastSecond = s;
+    lastSecond = S;
   }
 
-  updateMinuteMovement(m, s);
+  updateMinuteMovement(M, S);
   updateSecondParticles();
-
   drawMinutePoints();
-  drawSecondParticles();
 
-  if (m === 59 && s === 59) {
-    handleHourTransition((h + 1) % 24);
-  }
-
-  drawDebugInfo(); // 🟡 Anzeige der aktuellen Partikel
-}
-
-// Stunde erzeugen / aktualisieren
-function createHourCenter(h) {
-  if (hourCenter) World.remove(world, hourCenter);
-  let r = map(h, 0, 23, 10, 60);
-  hourCenter = Bodies.circle(width / 2, height / 2, r, { isStatic: true });
-  hourCenter.radius = r;
-  hourCenter.totalGrowth = 0;
-  World.add(world, hourCenter);
-}
-
-function drawHourCenter() {
-  fill('#FF4444');
+  // Stundenkreis (statische Größe, kein Puls)
+  let r = map(H, 0, 23, MIN_HOUR_R, MAX_HOUR_R);
   noStroke();
-  ellipse(hourCenter.position.x, hourCenter.position.y, hourCenter.radius * 2);
+  fill('#FF4444');
+  ellipse(width/2, height/2, r * 2);
+
+  drawSecondParticles();
 }
 
-// Minutenpunkte erzeugen
-function generateMinutePoints(currentMinute = 0) {
+function keyPressed() {
+  if (keyCode === UP_ARROW) {
+    world.gravity.x = 0;
+    world.gravity.y = -1;
+  } else if (keyCode === DOWN_ARROW) {
+    world.gravity.x = 0;
+    world.gravity.y = 1;
+  } else if (keyCode === LEFT_ARROW) {
+    world.gravity.x = -1;
+    world.gravity.y = 0;
+  } else if (keyCode === RIGHT_ARROW) {
+    world.gravity.x = 1;
+    world.gravity.y = 0;
+  }
+}
+
+function generateMinutePoints(curM = 0) {
+  // statisch: Minutenpunkte bewegen sich nicht unter Gravitation
   minutePoints = [];
   for (let i = 0; i < 60; i++) {
-    let pos = randomPointAwayFromCenter(hourCenter.position, 200);
-    let b = Bodies.circle(pos.x, pos.y, 8, { frictionAir: 0.05 });
-
-    b.originalPosition = { x: pos.x, y: pos.y };
-    b.active = false;
-    b.assignedSecond = null;
-
-    // Alles vor der aktuellen Minute ist bereits verschluckt
-    if (i < currentMinute) {
-      b.targetReached = true;
-      // NICHT zum World hinzufügen!
-    } else {
-      b.targetReached = false;
-      World.add(world, b);
-    }
-
-    minutePoints.push(b);
+    let angle = random(TWO_PI),
+        distR = random(200, 350);
+    let x = width/2 + cos(angle) * distR,
+        y = height/2 + sin(angle) * distR;
+    let mp = Bodies.circle(x, y, 8, {
+      isStatic: true,
+      label: 'minute'
+    });
+    mp.original = { x, y };
+    mp.arrived = i < curM;
+    if (!mp.arrived) World.add(world, mp);
+    minutePoints.push(mp);
   }
-  activeMinuteIndex = currentMinute;
 }
 
-
-
-// Minutenpunkt → Stundenpunkt Bewegung
 function updateMinuteMovement(m, s) {
-  if (m !== lastMinute) {
-    activeMinuteIndex = m;
-    lastMinute = m;
+  let mp = minutePoints[m];
+  if (!mp || mp.arrived) return;
+  let p = constrain(s / 59, 0, 1);
+  Body.setPosition(mp, {
+    x: lerp(mp.original.x, width/2, p),
+    y: lerp(mp.original.y, height/2, p)
+  });
+  let r = map(hour(), 0, 23, MIN_HOUR_R, MAX_HOUR_R);
+  if (dist(mp.position.x, mp.position.y, width/2, height/2) <= r + 8) {
+    mp.arrived = true;
+    World.remove(world, mp);
   }
+}
 
-  for (let i = 0; i < minutePoints.length; i++) {
-    let mp = minutePoints[i];
-    if (mp.targetReached) continue;
+function spawnSecondParticle() {
+  let free = minutePoints.filter(mp => mp && !mp.arrived && !mp.busy);
+  if (!free.length) return;
+  let target = random(free);
+  target.busy = true;
 
-    if (i === activeMinuteIndex) {
-      let progress = constrain(s / 59, 0, 1);
-      let target = hourCenter.position;
-      let origin = mp.originalPosition;
-      let newX = lerp(origin.x, target.x, progress);
-      let newY = lerp(origin.y, target.y, progress);
-      Body.setPosition(mp, { x: newX, y: newY });
+  let angle = random(TWO_PI),
+      distR = random(300, 400);
+  let x0 = width/2 + cos(angle) * distR,
+      y0 = height/2 + sin(angle) * distR;
+  let p = Bodies.circle(x0, y0, 6, {
+    restitution: 1.5,
+    frictionAir: 0.005,
+    label: 'second'
+  });
+  p.origin = { x: x0, y: y0 };
+  p.target = target;
+  p.spawn  = millis();
+  p.life   = 1000;
+  secondParticles.push(p);
+  World.add(world, p);
+}
 
-      if (s === 59) {
-        World.remove(world, mp);
-        mp.targetReached = true;
-        hourCenter.totalGrowth += 1;
-        hourCenter.radius += map(1, 0, 59, 0, 1);
-      }
+function updateSecondParticles() {
+  let now = millis();
+  for (let i = secondParticles.length - 1; i >= 0; i--) {
+    let p = secondParticles[i],
+        t = (now - p.spawn) / p.life;
+    if (t >= 1) {
+      World.remove(world, p);
+      p.target.busy = false;
+      secondParticles.splice(i, 1);
+    } else {
+      Body.setPosition(p, {
+        x: lerp(p.origin.x, p.target.position.x, t),
+        y: lerp(p.origin.y, p.target.position.y, t)
+      });
     }
   }
 }
 
 function drawMinutePoints() {
   fill(180);
+  noStroke();
   for (let mp of minutePoints) {
-    if (!mp.targetReached) {
+    if (mp && !mp.arrived) {
       ellipse(mp.position.x, mp.position.y, 16);
-    }
-  }
-}
-
-// Sekundenpartikel erzeugen
-function spawnSecondParticle() {
-  let target = getClosestFreeMinutePoint();
-  if (!target) return;
-
-  target.assignedSecond = true;
-
-  let pos = randomPointAwayFromCenter(hourCenter.position, 300);
-  let b = Bodies.circle(pos.x, pos.y, 4, { frictionAir: 0.02 });
-  b.origin = { x: pos.x, y: pos.y };
-  b.target = target;
-  b.spawnTime = millis();
-  b.lifetime = 1000; // 1 Sekunde Bewegung
-  secondParticles.push(b);
-  World.add(world, b);
-}
-
-// Sekundenpartikel Bewegung & Verschluckung
-function updateSecondParticles() {
-  let now = millis();
-  for (let i = secondParticles.length - 1; i >= 0; i--) {
-    let sp = secondParticles[i];
-    let t = (now - sp.spawnTime) / sp.lifetime;
-    if (t >= 1) {
-      World.remove(world, sp);
-      sp.target.assignedSecond = null;
-      secondParticles.splice(i, 1);
-    } else {
-      let newX = lerp(sp.origin.x, sp.target.position.x, t);
-      let newY = lerp(sp.origin.y, sp.target.position.y, t);
-      Body.setPosition(sp, { x: newX, y: newY });
     }
   }
 }
 
 function drawSecondParticles() {
   fill(220);
-  for (let sp of secondParticles) {
-    ellipse(sp.position.x, sp.position.y, 6);
-  }
-}
-
-// Stunde beenden und neu starten
-function handleHourTransition(nextHour) {
-  if (minutePoints.some(mp => !mp.targetReached)) return;
-  if (secondParticles.length > 0) return;
-
-  createHourCenter(nextHour);
-  generateMinutePoints();
-  secondParticles = [];
-}
-
-// Hilfsfunktionen
-function randomPointAwayFromCenter(center, minDist) {
-  let angle = random(TWO_PI);
-  let radius = random(minDist, minDist + 200);
-  return {
-    x: center.x + cos(angle) * radius,
-    y: center.y + sin(angle) * radius
-  };
-}
-
-function getClosestFreeMinutePoint() {
-  let available = minutePoints.filter(mp => !mp.targetReached && !mp.assignedSecond);
-  if (available.length === 0) return null;
-
-  let closest = null;
-  let minDist = Infinity;
-  for (let mp of available) {
-    let d = dist(mp.position.x, mp.position.y, width / 2, height / 2);
-    if (d < minDist) {
-      minDist = d;
-      closest = mp;
-    }
-  }
-  return closest;
-}
-
-// 🟡 Anzeige: Punkt-Zähler
-function drawDebugInfo() {
-  fill(255);
   noStroke();
-  textSize(16);
-  textAlign(LEFT, TOP);
-
-  let minutenAktiv = minutePoints.filter(mp => !mp.targetReached).length;
-  let sekundenAktiv = secondParticles.length;
-  let stundenAktiv = hourCenter ? 1 : 0;
-
-  let info = `🕓 Stundenpunkt: ${stundenAktiv}
-🕑 Minutenpunkte: ${minutenAktiv}
-⏱ Sekundenpunkte: ${sekundenAktiv}`;
-
-  text(info, 10, 10);
+  for (let p of secondParticles) {
+    ellipse(p.position.x, p.position.y, 8);
+  }
 }
