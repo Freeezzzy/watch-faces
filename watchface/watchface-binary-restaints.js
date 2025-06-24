@@ -19,6 +19,8 @@ let boxes = [];
 let murmel, canvasElem
 const testBall = 'red'
 let actSec, actMin, actH
+let blockConstraints = [];
+
 
 
 // collisionFilter: {group: 0x00, category: 0b0000 0000 0000 0001, mask: 0b1111 1111 1111 1111}
@@ -131,19 +133,7 @@ function createScene() {
     { isStatic: false, friction: 0.3, restitution: 0.9 }
   ));
 
-  // blocks.push(new Parts(
-  //   world,
-  //   { x: 900, y: 730, color: "black", offset: { x: 0, y: -20.0 } },
-  //   {
-  //     parts: [
-  //       Bodies.rectangle(4, 20, 5, 20),
-  //       Bodies.rectangle(40 - 4, 20, 5, 20),
-  //       Bodies.rectangle(20, +40 - 4, 50, 5)
-  //     ],
-  //     isStatic: true,
-  //     friction: 0.0
-  //   }
-  // ));
+ 
 
   setTimeout(() => {
     // createCode(23, 0, 'black')
@@ -154,98 +144,50 @@ function createScene() {
   // murmel = addMurmel({ x: 700, y: 300 }, '#404040', cfM)
 }
 
-// function createCode(zahl, box, color) {
-//   let parts = []
-//   const b = dec2bin(zahl)
-//   let x = 0;
-//   for (c = 0; c < b.length; c++) {
-//     if (b.charAt(c) == 1) {
-//       console.log("rect")
-//       parts.push(Bodies.rectangle(x, 0, 20, 80))
-//       x += 50
-//     } else {
-//       console.log("circle")
-//       parts.push(Bodies.circle(x, 0, 20))
-//       x += 50
-//     }
-//   }
-//   blocks[box] = new Parts(
-//     world,
-//     { x: boxes[box].body.position.x - 40, y: boxes[box].body.position.y - 40, color: color, offset: { x: 0, y: -20.0 } },
-//     {
-//       parts: parts,
-//       isStatic: false,
-//       friction: 0.0,
-//       restitution: 0.2
-//     }
-//   );
-// }
+// Constraints zum ersten Objekt (links)
+const constraintTopLeft = Matter.Constraint.create({
+  bodyA: blockBody,
+  pointA: { x: first.position.x, y: first.position.y - 40 },
+  bodyB: boxBody,
+  pointB: { x: -boxBody.bounds.max.x + boxBody.position.x + 10, y: -boxBody.bounds.max.y + boxBody.position.y + 10 },
+  stiffness: 0.02,
+  damping: 0.05,
+  render: { strokeStyle: 'green' }
+});
 
-function createCode(zahl, box, color) {
-  if (!boxes[box] || !boxes[box].body) return;  // <<< SCHUTZ!
+const constraintBottomLeft = Matter.Constraint.create({
+  bodyA: blockBody,
+  pointA: { x: first.position.x, y: first.position.y + 40 },
+  bodyB: boxBody,
+  pointB: { x: -boxBody.bounds.max.x + boxBody.position.x + 10, y: -boxBody.bounds.min.y + boxBody.position.y - 10 },
+  stiffness: 0.02,
+  damping: 0.05,
+  render: { strokeStyle: 'green' }
+});
 
-  let parts = [];
-  const b = dec2bin(zahl);
-  let x = 0;
+// Constraints zum letzten Objekt (rechts)
+const constraintTopRight = Matter.Constraint.create({
+  bodyA: blockBody,
+  pointA: { x: last.position.x, y: last.position.y - 40 },
+  bodyB: boxBody,
+  pointB: { x: boxBody.bounds.max.x - boxBody.position.x - 10, y: -boxBody.bounds.max.y + boxBody.position.y + 10 },
+  stiffness: 0.02,
+  damping: 0.05,
+  render: { strokeStyle: 'green' }
+});
 
-  for (let c = 0; c < b.length; c++) {
-    if (b.charAt(c) === '1') {
-      parts.push(Bodies.rectangle(x, 0, 20, 80));
-    } else {
-      parts.push(Bodies.circle(x, 0, 20));
-    }
-    x += 50;
-  }
-
-  blocks[box] = new Parts(
-    world,
-    {
-      x: boxes[box].body.position.x - 40,
-      y: boxes[box].body.position.y - 40,
-      color: color,
-      offset: { x: 0, y: -20.0 }
-    },
-    {
-      parts: parts,
-      isStatic: false,
-      friction: 0.0,
-      restitution: 0.2
-    }
-  );
-}
+const constraintBottomRight = Matter.Constraint.create({
+  bodyA: blockBody,
+  pointA: { x: last.position.x, y: last.position.y + 40 },
+  bodyB: boxBody,
+  pointB: { x: boxBody.bounds.max.x - boxBody.position.x - 10, y: -boxBody.bounds.min.y + boxBody.position.y - 10 },
+  stiffness: 0.02,
+  damping: 0.05,
+  render: { strokeStyle: 'green' }
+});
 
 
-// function tick() {
-//   const zeit = new Date(Date.now())
-//  const h = zeit.getHours()
-//  if (h != actH) {
-//    if (blocks [0]){
-//    Matter.World.remove(world, blocks[0])
-//    }
-//    createCode(h, 0, 'black')
-  
-//    actH = h
-//  }
-//  const min = zeit.getMinutes()
-//  if (min != actMin) {
-//    if (blocks [1]){
-//    Matter.World.remove(world, blocks[1])
-//    }
-//    createCode(min, 1, '#00FF2A')
-  
-//    actMin = min
-//  }
-//  const sec = zeit.getSeconds()
-//  if (sec != actSec) {
-//   if (blocks[2]) {
-//     if (blocks[2]) {
-//       Matter.World.remove(world, blocks[2].body); // oder Composite
-//     }  // wichtig: .body!
-//   }
-//   createCode(sec, 2, 'white');
-//   actSec = sec;
-// }
-//  }
+
 
 function tick() {
   const zeit = new Date(Date.now());
@@ -282,18 +224,7 @@ function tick() {
 }
 
 
-// function addMurmel(point, color, filter) {
-//   const ball = new Ball(
-//     world,
-//     { x: point.x, y: point.y, r: 30, color: color },
-//     {
-//       label: "Murmel", restitution: 0.9, friction: 0.0, frictionAir: 0.0, isStatic: false, density: 0.01,
-//       collisionFilter: filter
-//     }
-//   )
-//   blocks.push(ball)
-//   return ball
-// }
+
 
 function scrollEndless(point) {
   // wohin muss verschoben werden damit point wenn möglich in der Mitte bleibt
@@ -309,18 +240,36 @@ function scrollEndless(point) {
 }
 
 function draw() {
-  // clear();
-  background("#A5A2A2")
+  background("#A5A2A2");
   if (murmel) {
-    scrollEndless(murmel.body.position)
+    scrollEndless(murmel.body.position);
   }
+
   boxes.forEach(block => block.draw());
   blocks.forEach(block => block.draw());
+
+  // Constraints zeichnen
+  stroke('green');
+  strokeWeight(2);
+  for (let conns of blockConstraints) {
+    if (!conns) continue;
+    for (let c of conns) {
+      if (!c.bodyA) continue;
+      const bodyA = c.bodyA;
+      const ax = bodyA.position.x + (c.pointA?.x || 0);
+      const ay = bodyA.position.y + (c.pointA?.y || 0);
+      const bx = c.pointB?.x || 0;
+      const by = c.pointB?.y || 0;
+      line(ax, ay, bx, by);
+    }
+  }
+
   mouse.draw();
   if (boxes.length >= 3 && boxes[0]?.body && boxes[1]?.body && boxes[2]?.body) {
     tick();
   }
 }
+
 
 function keyPressed() {
   const forceAmount = 2;
