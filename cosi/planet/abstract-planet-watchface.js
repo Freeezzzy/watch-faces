@@ -9,8 +9,8 @@ const WATCH = {
         INITIAL: 0.019,
         INCREMENT: 0.001,
         MAX: 0.25,
-        YELLOW_THRESHOLD: 0.12,    // Changed from 0.20 to 0.12
-        BREAKAWAY_THRESHOLD: 0.17  // Changed from 0.30 to 0.17
+        YELLOW_THRESHOLD: 0.15,    // Changed from 0.20 to 0.12
+        BREAKAWAY_THRESHOLD: 0.22  // Changed from 0.30 to 0.17
     }
 };
 
