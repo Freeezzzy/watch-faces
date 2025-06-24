@@ -89,31 +89,30 @@
     }
 
     function updateTime() {
-  let h = hour();
-  let m = minute();
-  let s = second();
-  currentSecond = s;
+      let h = hour();
+      let m = minute();
+      let s = second();
+      currentSecond = s;
 
-  let digits = [int(h / 10), h % 10, int(m / 10), m % 10];
+      // Reihenfolge der Digits: [m2, m1, h2, h1] - von außen nach innen
+      // Für 17:05 wird es: [5, 0, 7, 1]
+      let digits = [m % 10, int(m / 10), h % 10, int(h / 10)];
 
-  for (let i = 0; i < 4; i++) {
-    let count = digits[i];
-    orbits[i].count = count;
+      for (let i = 0; i < 4; i++) {
+        let count = digits[i];
+        orbits[i].count = count;
 
-    let angleStep = TWO_PI / max(count, 1);
+        let angleStep = TWO_PI / max(count, 1);
 
-    // vorhandene Winkel beibehalten, aber ergänzen oder kürzen
-    if (orbits[i].angles.length < count) {
-      // hinzufügen
-      for (let j = orbits[i].angles.length; j < count; j++) {
-        orbits[i].angles.push(j * angleStep);
+        if (orbits[i].angles.length < count) {
+          for (let j = orbits[i].angles.length; j < count; j++) {
+            orbits[i].angles.push(j * angleStep);
+          }
+        } else if (orbits[i].angles.length > count) {
+          orbits[i].angles.splice(count);
+        }
       }
-    } else if (orbits[i].angles.length > count) {
-      // kürzen
-      orbits[i].angles.splice(count);
     }
-  }
-}
 
     function drawOrbits() {
       noFill();
