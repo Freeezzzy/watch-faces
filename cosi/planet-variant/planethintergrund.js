@@ -14,6 +14,24 @@ const WATCH = {
     }
 };
 
+// Neue Hintergrund-Konstanten für Sterne
+const BACKGROUND = {
+    STAR_COUNT: 80,
+    TWINKLE_SPEED: 0.03,
+    STAR_MIN_SIZE: 1,
+    STAR_MAX_SIZE: 3,
+    SHOOTING_STAR_CHANCE: 0.0008,
+    SHOOTING_STAR_DURATION: 60
+};
+
+// Definiere die exakte 4-Farben-Palette
+const COLORS = {
+    BLACK: 0,
+    WHITE: 255,
+    GRAY: 100,  // Der EINE Grauton
+    YELLOW: [255, 255, 100]  // Das EINE Gelb
+};
+
 // Matter.js Module aliases
 const { Engine, Render, World, Bodies, Body, Constraint } = Matter;
 
@@ -29,6 +47,10 @@ let constraints = []; // Array of arrays - constraints[orbitIndex][planetIndex]
 let centerBody; // Static body at center for constraints
 let currentSecond = 0;
 let currentStage = 1; // 1 = white, 2 = yellow, 3 = breakaway
+
+// Sterne-Array
+let stars = [];
+let shootingStars = [];
 
 // Time override variables
 let useCustomTime = false;
@@ -51,6 +73,7 @@ function setup() {
         centerX = width / 2;
         centerY = height / 2;
 
+        initializeStars(); // Neue Zeile
         createTimeControls();
         initializePhysics();
         updateTime();
@@ -58,6 +81,130 @@ function setup() {
     } catch (error) {
         console.error('Setup failed:', error);
     }
+}
+
+function initializeStars() {
+    stars = [];
+    for (let i = 0; i < BACKGROUND.STAR_COUNT; i++) {
+        stars.push({
+            x: random(0, width),
+            y: random(0, height),
+            size: random(BACKGROUND.STAR_MIN_SIZE, BACKGROUND.STAR_MAX_SIZE),
+            baseBrightness: random(0.4, 0.9),
+            twinkleOffset: random(0, TWO_PI),
+            twinkleSpeed: random(0.01, 0.03), // Langsamere Geschwindigkeit
+            twinkleIntensity: random(0.2, 0.4) // Weniger intensive Schwankung
+        });
+    }
+    shootingStars = [];
+}
+
+function drawBackground() {
+    // Zeichne aufblitzende Sterne
+    drawTwinklingStars();
+    
+    // Zeichne Sternschnuppen
+    drawShootingStars();
+    
+    // Subtile zentrale Ringe (sehr dezent)
+    drawCenterRings();
+}
+
+function drawTwinklingStars() {
+    noStroke();
+    
+    for (let i = 0; i < stars.length; i++) {
+        let star = stars[i];
+        
+        // Sanftere Twinkle-Berechnung mit sin und cos für smoothere Bewegung
+        let twinkle1 = sin(frameCount * star.twinkleSpeed + star.twinkleOffset);
+        let twinkle2 = cos(frameCount * star.twinkleSpeed * 0.7 + star.twinkleOffset * 1.3);
+        let combinedTwinkle = (twinkle1 + twinkle2 * 0.5) / 1.5;
+        
+        let currentBrightness = star.baseBrightness + combinedTwinkle * star.twinkleIntensity;
+        currentBrightness = constrain(currentBrightness, 0.2, 1.0);
+        
+        // NUR der eine Grauton mit variabler Transparenz
+        let alpha = map(currentBrightness, 0.2, 1.0, 80, 255);
+        fill(COLORS.GRAY, alpha);
+        
+        // Sanftere Größenvariation
+        let currentSize = star.size * (0.8 + currentBrightness * 0.2);
+        
+        ellipse(star.x, star.y, currentSize);
+        
+        // Für hellere Sterne: sanfterer Glow-Effekt
+        if (currentBrightness > 0.75) {
+            fill(COLORS.GRAY, alpha * 0.4);
+            ellipse(star.x, star.y, currentSize * 1.8);
+        }
+    }
+}
+
+function drawShootingStars() {
+    // Erstelle neue Sternschnuppen
+    if (random() < BACKGROUND.SHOOTING_STAR_CHANCE) {
+        createShootingStar();
+    }
+    
+    // Zeichne und update bestehende Sternschnuppen
+    for (let i = shootingStars.length - 1; i >= 0; i--) {
+        let meteor = shootingStars[i];
+        
+        // Update Position
+        meteor.x += meteor.vx;
+        meteor.y += meteor.vy;
+        meteor.life--;
+        
+        // Berechne Alpha basierend auf Lebensdauer
+        let alpha = map(meteor.life, 0, BACKGROUND.SHOOTING_STAR_DURATION, 0, 255);
+        alpha = constrain(alpha, 0, 255);
+        
+        // Zeichne Sternschnuppe - NUR Grauton
+        stroke(COLORS.GRAY, alpha);
+        strokeWeight(2);
+        
+        // Hauptlinie
+        line(meteor.x, meteor.y, 
+             meteor.x - meteor.vx * 8, meteor.y - meteor.vy * 8);
+        
+        // Schweif mit abnehmendem Alpha
+        for (let j = 1; j <= 3; j++) {
+            let trailAlpha = alpha * (1 - j * 0.3);
+            stroke(COLORS.GRAY, trailAlpha);
+            strokeWeight(2 - j * 0.5);
+            line(meteor.x - meteor.vx * j * 3, meteor.y - meteor.vy * j * 3,
+                 meteor.x - meteor.vx * (j + 3) * 3, meteor.y - meteor.vy * (j + 3) * 3);
+        }
+        
+        // Kopf der Sternschnuppe (heller Punkt) - NUR Grauton
+        fill(COLORS.GRAY, alpha);
+        noStroke();
+        ellipse(meteor.x, meteor.y, 3);
+        
+        // Entferne abgelaufene Sternschnuppen
+        if (meteor.life <= 0 || meteor.x < -50 || meteor.x > width + 50 || 
+            meteor.y < -50 || meteor.y > height + 50) {
+            shootingStars.splice(i, 1);
+        }
+    }
+}
+
+function drawCenterRings() {
+    push();
+    translate(centerX, centerY);
+    noFill();
+    
+    // Sehr subtile konzentrische Kreise - NUR Grauton
+    for (let i = 1; i <= 3; i++) {
+        let radius = i * 70;
+        let alpha = map(i, 1, 3, 30, 10); // Transparenz-Variation
+        
+        stroke(COLORS.GRAY, alpha);
+        strokeWeight(0.5);
+        ellipse(0, 0, radius * 2);
+    }
+    pop();
 }
 
 function createTimeControls() {
@@ -664,7 +811,7 @@ function applySpacingForces(orbitIndex, planetIndex, currentPos) {
 
 function drawOrbits() {
     noFill();
-    stroke(100);
+    stroke(COLORS.GRAY); // NUR der eine Grauton
     strokeWeight(1);
     // Only draw the orbit circles
     for (let i = 0; i < WATCH.ORBIT_RADII.length; i++) {
@@ -683,9 +830,9 @@ function drawPlanets() {
                 let x = pos.x - centerX;
                 let y = pos.y - centerY;
                 
-                // Color based on current stage - keep yellow for all accelerated stages
+                // Color based on current stage - NUR Gelb oder Weiß
                 if (currentStage === 3) {
-                    fill(255, 255, 100); // Yellow when broken free (same as stage 2)
+                    fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2]); // Das EINE Gelb
                     
                     // Extra sparkles in stage 3
                     if (random() < 0.35) {
@@ -697,12 +844,12 @@ function drawPlanets() {
                                 vy: random(-5, 5),
                                 alpha: 255,
                                 life: 20 + random(30),
-                                color: [255, 255, 100] // Yellow sparkles (not red)
+                                color: COLORS.YELLOW // Das EINE Gelb
                             });
                         }
                     }
                 } else if (currentStage === 2) {
-                    fill(255, 255, 100); // Yellow when fast
+                    fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2]); // Das EINE Gelb
                     
                     // Normal sparkles in stage 2
                     if (random() < 0.25) {
@@ -714,12 +861,12 @@ function drawPlanets() {
                                 vy: random(-4, 4),
                                 alpha: 255,
                                 life: 25 + random(25),
-                                color: [255, 255, 100] // Yellow sparkles
+                                color: COLORS.YELLOW // Das EINE Gelb
                             });
                         }
                     }
                 } else {
-                    fill(255); // White when normal speed
+                    fill(COLORS.WHITE); // Das EINE Weiß
                 }
                 
                 ellipse(x, y, 8);
@@ -741,7 +888,7 @@ function updateFreedPlanets() {
             continue;
         }
         
-        fill(255, 255, 100, p.life);
+        fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2], p.life); // Das EINE Gelb
         ellipse(pos.x - centerX, pos.y - centerY, 6);
         p.life -= 3;
 
@@ -762,8 +909,8 @@ function updateParticles() {
         p.life--;
         p.alpha = map(p.life, 0, 50, 0, 255);
 
-        // Use particle color if available, otherwise default to yellow
-        let color = p.color || [255, 255, 150];
+        // NUR das eine Gelb verwenden
+        let color = p.color || COLORS.YELLOW;
         fill(color[0], color[1], color[2], p.alpha);
         noStroke();
         ellipse(p.x, p.y, 3);
@@ -792,28 +939,28 @@ function drawSeconds() {
         let pulse = 1.5 + sin(frameCount * 0.1 + i) * 1.5;
 
         if (i === currentSecond) {
-            fill(255, 255, 100);
+            fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2]); // Das EINE Gelb
             ellipse(x, y, 5 + pulse);
         } else {
-            fill(120);
+            fill(COLORS.GRAY); // Der EINE Grauton
             ellipse(x, y, 3 + pulse * 0.5);
         }
     }
 }
 
 function drawWatchFrame() {
-    // Äußerer Rahmen
+    // Äußerer Rahmen - NUR Grauton
     noFill();
-    stroke(80);
+    stroke(COLORS.GRAY);
     strokeWeight(3);
-    rect(0, 0, width, height, 90); // Abgerundete Ecken
+    rect(0, 0, width, height, 90);
 
-    // Digital Crown Andeutung
-    fill(80);
+    // Digital Crown Andeutung - NUR Grauton
+    fill(COLORS.GRAY);
     noStroke();
     rect(width - 8, height / 2 - 20, 8, 40, 5, 0, 0, 5);
     
-    // Seitentaste
+    // Seitentaste - NUR Grauton
     rect(width - 8, height / 2 + 40, 8, 30, 5, 0, 0, 5);
 }
 
@@ -832,6 +979,9 @@ function draw() {
     try {
         background(0);
         
+        // Sternenhimmel-Hintergrund zuerst zeichnen
+        drawBackground();
+        
         // Update Matter.js physics
         Engine.update(engine);
         
@@ -844,8 +994,8 @@ function draw() {
         
         drawOrbits();
         drawPlanets();
-        updateFreedPlanets(); // Keep this for any existing freed planets
-        updateParticles(); // Keep this but it won't create new particles
+        updateFreedPlanets();
+        updateParticles();
         drawSeconds();
         
         pop();
