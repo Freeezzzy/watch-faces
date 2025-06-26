@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Abstract Planet Watchface</title>
+  <title>Abstract Planet Watchface - Starry Background</title>
   <style>
     body {
       margin: 0;
@@ -13,19 +13,8 @@
       height: 100vh;
       overflow: hidden;
     }
-    .watch-frame {
-      width: 396px;
-      height: 484px;
-      border-radius: 90px;
-      background: black;
-      position: relative;
-      box-shadow: 0 0 20px rgba(68, 68, 68, 0.5);
-    }
     canvas {
       display: block;
-      position: absolute;
-      top: 0;
-      left: 0;
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
@@ -33,8 +22,5 @@
   <script src="planethintergrund.js"></script>
 </head>
 <body>
-  <div class="watch-frame">
-    <!-- Canvas elements will be created here by p5.js and Matter.js -->
-  </div>
 </body>
 </html>

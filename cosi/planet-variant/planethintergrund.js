@@ -949,19 +949,7 @@ function drawSeconds() {
 }
 
 function drawWatchFrame() {
-    // Äußerer Rahmen - NUR Grauton
-    noFill();
-    stroke(COLORS.GRAY);
-    strokeWeight(3);
-    rect(0, 0, width, height, 90);
-
-    // Digital Crown Andeutung - NUR Grauton
-    fill(COLORS.GRAY);
-    noStroke();
-    rect(width - 8, height / 2 - 20, 8, 40, 5, 0, 0, 5);
-    
-    // Seitentaste - NUR Grauton
-    rect(width - 8, height / 2 + 40, 8, 30, 5, 0, 0, 5);
+    // Komplett leere Funktion - nur die Matter.js Wände bleiben für die Physik
 }
 
 function cleanup() {
