@@ -20,7 +20,7 @@ const BACKGROUND = {
     TWINKLE_SPEED: 0.03,
     STAR_MIN_SIZE: 1,
     STAR_MAX_SIZE: 3,
-    SHOOTING_STAR_CHANCE: 0.0008,
+    SHOOTING_STAR_CHANCE: 0.003, // Increased from 0.0008 to 0.003
     SHOOTING_STAR_DURATION: 60
 };
 
@@ -141,9 +141,51 @@ function drawTwinklingStars() {
     }
 }
 
+function createShootingStar() {
+    // Create shooting star from random edge of screen
+    let startX, startY, vx, vy;
+    
+    // Choose random edge to start from
+    let edge = int(random(4));
+    switch(edge) {
+        case 0: // Top
+            startX = random(width);
+            startY = -10;
+            vx = random(-3, 3);
+            vy = random(2, 6);
+            break;
+        case 1: // Right
+            startX = width + 10;
+            startY = random(height);
+            vx = random(-6, -2);
+            vy = random(-3, 3);
+            break;
+        case 2: // Bottom
+            startX = random(width);
+            startY = height + 10;
+            vx = random(-3, 3);
+            vy = random(-6, -2);
+            break;
+        case 3: // Left
+            startX = -10;
+            startY = random(height);
+            vx = random(2, 6);
+            vy = random(-3, 3);
+            break;
+    }
+    
+    shootingStars.push({
+        x: startX,
+        y: startY,
+        vx: vx,
+        vy: vy,
+        life: BACKGROUND.SHOOTING_STAR_DURATION
+    });
+}
+
 function drawShootingStars() {
-    // Erstelle neue Sternschnuppen
-    if (random() < BACKGROUND.SHOOTING_STAR_CHANCE) {
+    // Erstelle neue Sternschnuppen - only in stage 1 for cleaner look
+    if (currentStage === 1 && random() < BACKGROUND.SHOOTING_STAR_CHANCE) {
         createShootingStar();
     }
     
@@ -156,12 +198,12 @@ function drawShootingStars() {
         meteor.y += meteor.vy;
         meteor.life--;
         
-        // Berechne Alpha basierend auf Lebensdauer
-        let alpha = map(meteor.life, 0, BACKGROUND.SHOOTING_STAR_DURATION, 0, 255);
-        alpha = constrain(alpha, 0, 255);
+        // Berechne Alpha basierend auf Lebensdauer - brighter for better visibility
+        let alpha = map(meteor.life, 0, BACKGROUND.SHOOTING_STAR_DURATION, 0, 200); // Increased max alpha
+        alpha = constrain(alpha, 0, 200);
         
-        // Zeichne Sternschnuppe - NUR Grauton
-        stroke(COLORS.GRAY, alpha);
+        // Zeichne Sternschnuppe - brighter gray for better visibility
+        stroke(180, alpha); // Brighter gray instead of COLORS.GRAY
         strokeWeight(2);
         
         // Hauptlinie
@@ -171,14 +213,14 @@ function drawShootingStars() {
         // Schweif mit abnehmendem Alpha
         for (let j = 1; j <= 3; j++) {
             let trailAlpha = alpha * (1 - j * 0.3);
-            stroke(COLORS.GRAY, trailAlpha);
+            stroke(180, trailAlpha); // Brighter gray
             strokeWeight(2 - j * 0.5);
             line(meteor.x - meteor.vx * j * 3, meteor.y - meteor.vy * j * 3,
                  meteor.x - meteor.vx * (j + 3) * 3, meteor.y - meteor.vy * (j + 3) * 3);
         }
         
-        // Kopf der Sternschnuppe (heller Punkt) - NUR Grauton
-        fill(COLORS.GRAY, alpha);
+        // Kopf der Sternschnuppe (heller Punkt) - brighter
+        fill(200, alpha); // Brighter than COLORS.GRAY
         noStroke();
         ellipse(meteor.x, meteor.y, 3);
         
@@ -829,6 +871,7 @@ function drawPlanets() {
                 let pos = planetBodies[i][j].position;
                 let x = pos.x - centerX;
                 let y = pos.y - centerY;
+                let velocity = planetBodies[i][j].velocity;
                 
                 // Color based on current stage - NUR Gelb oder Weiß
                 if (currentStage === 3) {
@@ -844,6 +887,7 @@ function drawPlanets() {
                                 vy: random(-5, 5),
                                 alpha: 255,
                                 life: 20 + random(30),
+                                size: random(2, 4),
                                 color: COLORS.YELLOW // Das EINE Gelb
                             });
                         }
@@ -851,16 +895,25 @@ function drawPlanets() {
                 } else if (currentStage === 2) {
                     fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2]); // Das EINE Gelb
                     
-                    // Normal sparkles in stage 2
-                    if (random() < 0.25) {
-                        for (let k = 0; k < 3; k++) {
+                    // Improved sparks in stage 2 - more realistic sparking effect
+                    if (random() < 0.3) {
+                        let speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+                        let sparkCount = int(random(2, 6)); // Variable number of sparks
+                        
+                        for (let k = 0; k < sparkCount; k++) {
+                            // Calculate spark direction based on planet movement
+                            let sparkDirection = atan2(velocity.y, velocity.x) + random(-PI/3, PI/3);
+                            let sparkSpeed = random(3, 8) + speed * 0.5; // Speed influenced by planet velocity
+                            
                             particles.push({
-                                x: x + random(-5, 5),
-                                y: y + random(-5, 5),
-                                vx: random(-4, 4),
-                                vy: random(-4, 4),
-                                alpha: 255,
-                                life: 25 + random(25),
+                                x: x + random(-4, 4),
+                                y: y + random(-4, 4),
+                                vx: cos(sparkDirection) * sparkSpeed + random(-2, 2),
+                                vy: sin(sparkDirection) * sparkSpeed + random(-2, 2),
+                                alpha: random(200, 255),
+                                life: random(15, 40), // Variable lifespan
+                                size: random(1, 5), // Variable sizes for more realistic sparks
+                                sparkIntensity: random(0.7, 1.0), // Individual brightness
                                 color: COLORS.YELLOW // Das EINE Gelb
                             });
                         }
@@ -904,20 +957,33 @@ function updateParticles() {
         let p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.vx *= 0.98;
-        p.vy *= 0.98;
+        
+        // Different decay rates for different particle types
+        if (p.size > 3) {
+            // Larger sparks fade slower and decelerate more
+            p.vx *= 0.95;
+            p.vy *= 0.95;
+        } else {
+            // Smaller sparks fade faster and maintain speed longer
+            p.vx *= 0.98;
+            p.vy *= 0.98;
+        }
+        
         p.life--;
         p.alpha = map(p.life, 0, 50, 0, 255);
+        
+        // Apply spark intensity if it exists
+        let intensity = p.sparkIntensity || 1.0;
+        let actualAlpha = p.alpha * intensity;
 
         // NUR das eine Gelb verwenden
         let color = p.color || COLORS.YELLOW;
-        fill(color[0], color[1], color[2], p.alpha);
+        fill(color[0], color[1], color[2], actualAlpha);
         noStroke();
-        ellipse(p.x, p.y, 3);
-
-        // Glow effect
-        fill(color[0], color[1], color[2], p.alpha * 0.3);
-        ellipse(p.x, p.y, 6);
+        
+        // Draw spark with variable size - NO GLOW EFFECTS
+        let currentSize = p.size || 3;
+        ellipse(p.x, p.y, currentSize);
 
         if (p.life <= 0 || p.alpha <= 0) {
             particles.splice(i, 1);
