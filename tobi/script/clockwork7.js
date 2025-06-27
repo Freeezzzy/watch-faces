@@ -1,412 +1,305 @@
-// -----------------------------------------------------------------------------
-// WATCHFACE mit p5.js & Matter.js
-// – 960×960 px, nur Schwarz/Weiß/Blau
-// – Digitale Uhr aus Punkten mit Physics
-// – Letzte Minutenziffer: 60 Punkte, 1 pro Sekunde
-// – Zweite Stundenziffer füllt sich über die Stunde
-// – Explosion bei Minutenwechsel
-// – Sehr langsame Bewegung der blauen Punkte
-// -----------------------------------------------------------------------------
+Tobi
+txby
+Playing studying & working
+•
+TobiD
 
-const Engine = Matter.Engine,
-      World = Matter.World,
-      Bodies = Matter.Bodies,
-      Body = Matter.Body,
-      Vector = Matter.Vector;
+Tobi
+[DXT]
+ — 13/04/2025, 19:52
+moin cosi
+hast du eig. die Programmierhausaufgaben
+cosi — 13/04/2025, 21:22
+nopeee
+Wollte ich jetzt gleich anfangen
+Du?
+Tobi
+[DXT]
+ — 13/04/2025, 21:24
+ne, ich checks auch null
+gebe nichts ab ig
+cosi — 13/04/2025, 22:02
+ich fang jz mal an
+falls ich erfolgreicher bin melde ich mich
+Tobi
+[DXT]
+ — 13/04/2025, 22:03
+👍
+Jetzt anfangen? Wir haben 22 Uhr
+cosi — 13/04/2025, 22:06
+ja und?
+hast du ne Ahnung was überhaupt die Aufgabe is? also was soll das ergebnis sein? ich habs so verstanden das die bomben verdeckt sein sollen und man wenn man auf ein feld drückt 1. auf dem feld sieht ob da ne bombe war und 2. die felder drum herum aufgedeckt werden
+stimmt des so?
+Tobi
+[DXT]
+ — 13/04/2025, 22:08
+Schau dir am besten so ein 5 Minuten Minesweeper Erklär Video an auf YouTube. Ich verstehe es selbst nicht so genau
+Tobi
+[DXT]
+ — 13/04/2025, 22:08
+Nicht bald ins Bett gehen?
+cosi — 13/04/2025, 22:25
+kuck ich mal spotan
+Tobi
+[DXT]
+ — 23/04/2025, 10:39
+🔧 Änderungen nur in draw() – ganz oben vor background(0); Das erste Background entfernen
 
+// Arena-Hintergrund
+background(10, 10, 30); // dunkleres Blau-Schwarz
+stroke(255, 50); // leicht transparente Linien
+strokeWeight(4);
+
+// Mittellinie
+for (let y = 0; y < height; y += 40) {
+  line(width / 2, y, width / 2, y + 20);
+}
+
+// Spielfeldrahmen
+noFill();
+rect(0, 0, width, height);
+
+// Mittelkreis
+noFill();
+ellipse(width / 2, height / 2, 150);
+cosi — 23/04/2025, 10:41
+// FANCY PONG
+let ball;
+let leftPaddle, rightPaddle;
+let ballSpeed = 5;
+let paddleHeight = 100;
+let paddleWidth = 10;
+Expand
+message.txt
+7 KB
+Tobi
+[DXT]
+ — 23/04/2025, 10:55
+Neues Spielfeld
+// FANCY PONG
+let ball;
+let leftPaddle, rightPaddle;
+let ballSpeed = 5;
+let paddleHeight = 100;
+let paddleWidth = 10;
+Expand
+message.txt
+7 KB
+cosi — 18:33
+// watchface.js - Matter.js + p5.js Integration
+
+// Voraussetzungen im HTML:
+// <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.min.js"></script>
+// <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.17.1/matter.min.js"></script>
+// <script src="watchface.js"></script>
+Expand
+message.txt
+9 KB
+Tobi
+[DXT]
+ — 18:52
+Image
+cosi — 21:59
+bisher hab ich das
 let engine, world;
-let boundaries = [];
-
-// Konstanten
-const CANVAS_SIZE = 960;
-const POINTS_PER_MINUTE_DIGIT = 60;
-const COLORS = {
-  background: 0,
-  border: 255,
-  static: 150,
-  dynamic: [0, 100, 255]
+let dots = {
+  tensHours: [],
+  hours: [],
+  tensMinutes: [],
+  minutes: [],
+Expand
+message.txt
+6 KB
+﻿
+let engine, world;
+let dots = {
+  tensHours: [],
+  hours: [],
+  tensMinutes: [],
+  minutes: [],
+  tensSeconds: [],
+  seconds: []
 };
-const RADIUS = 6;
-const LOCK_DISTANCE = 15;
-const REPULSION_DISTANCE = 40;
 
-// Typography Layout
-const DIGIT_WIDTH = 160;
-const DIGIT_HEIGHT = 240;
-const DIGIT_SPACING = 80;
-const COLON_WIDTH = 40;
+// Farben entsprechend den Vorgaben
+const colors = {
+  background: '#000000',
+  gray: '#666666',
+  accent: '#0080FF'  // Blau als Akzentfarbe
+};
 
-const TOTAL_WIDTH = (4 * DIGIT_WIDTH) + (3 * DIGIT_SPACING) + COLON_WIDTH;
-const START_X = (CANVAS_SIZE - TOTAL_WIDTH) / 2;
-const BASELINE_Y = CANVAS_SIZE / 2;
-
-// Zeitvariablen
-let h = 0, m = 0, s = 0;
-let lastMinute = -1;
-let lastHour = -1;
-
-// Digit-Daten
-let digits = [];
-let flyingBodies = [];
+// Moderne LCD-Style Ziffern-Patterns (10 Punkte pro Ziffer)
+const digitShapes = {
+  0: [1,1,1,1,0,0,1,1,1,1], // Rechteck-Form
+  1: [0,0,1,1,0,0,1,1,0,0], // Rechte Seite
+  2: [1,1,1,0,1,1,0,1,1,1], // S-Form
+  3: [1,1,1,0,1,1,1,1,1,0], // E-Form gespiegelt
+  4: [1,0,1,1,1,1,1,1,0,0], // Offen unten links
+  5: [1,1,0,1,1,1,1,0,1,1], // S-Form gespiegelt
+  6: [1,1,0,1,1,1,1,1,1,1], // Fast 8 ohne rechts oben
+  7: [1,1,1,1,0,0,1,0,0,0], // L-Form gedreht
+  8: [1,1,1,1,1,1,1,1,1,1], // Vollständig
+  9: [1,1,1,1,1,1,1,1,1,0]  // Fast 8 ohne links unten
+};
 
 function setup() {
-  createCanvas(CANVAS_SIZE, CANVAS_SIZE);
+  let canvas = createCanvas(396, 484);
+  canvas.parent('thecanvas');
   
-  // Matter.js Setup
-  engine = Engine.create();
+  // Matter.js Engine setup
+  engine = Matter.Engine.create();
   world = engine.world;
-  world.gravity.scale = 0.0001; // Noch geringere Gravitationsskala
-  world.gravity.y = 0.02; // Minimale Gravitation
+  engine.world.gravity.y = 0;
+  
+  createDotArrays();
+}
 
-  // Unsichtbare Wände
-  let wallThickness = 30;
-  boundaries = [
-    Bodies.rectangle(width/2, -wallThickness/2, width, wallThickness, { isStatic: true }),
-    Bodies.rectangle(width/2, height + wallThickness/2, width, wallThickness, { isStatic: true }),
-    Bodies.rectangle(-wallThickness/2, height/2, wallThickness, height, { isStatic: true }),
-    Bodies.rectangle(width + wallThickness/2, height/2, wallThickness, height, { isStatic: true })
+function createDotArrays() {
+  let centerX = width / 2;
+  let centerY = height / 2;
+  let digitWidth = 40;
+  let digitHeight = 50;
+  
+  // 6 Positionen für HH:MM:SS
+  let positions = [
+    {x: centerX - 120, y: centerY - 20}, // 10er-Stunden
+    {x: centerX - 80, y: centerY - 20},  // Stunden
+    {x: centerX - 20, y: centerY - 20},  // 10er-Minuten
+    {x: centerX + 20, y: centerY - 20},  // Minuten
+    {x: centerX + 80, y: centerY - 20},  // 10er-Sekunden
+    {x: centerX + 120, y: centerY - 20}  // Sekunden
   ];
-  World.add(world, boundaries);
+  
+  let dotArrays = [dots.tensHours, dots.hours, dots.tensMinutes, dots.minutes, dots.tensSeconds, dots.seconds];
+  
+  // Für jede Ziffer 10 Punkte erstellen
+  for (let i = 0; i < 6; i++) {
+    createDigitShape(positions[i].x, positions[i].y, dotArrays[i], digitWidth, digitHeight);
+  }
+}
 
-  // Zeit initialisieren
-  let now = new Date();
-  h = now.getHours();
-  m = now.getMinutes();
-  s = now.getSeconds();
-
-  // Digits erstellen
-  digits = [
-    { id: 'h10', x: START_X + DIGIT_WIDTH/2, targets: [], currentLabel: null, type: 'normal' },
-    { id: 'h1',  x: START_X + DIGIT_WIDTH + DIGIT_SPACING + DIGIT_WIDTH/2, targets: [], currentLabel: null, type: 'hour_fill' },
-    { id: 'm10', x: START_X + 2*DIGIT_WIDTH + 2*DIGIT_SPACING + COLON_WIDTH + DIGIT_WIDTH/2, targets: [], currentLabel: null, type: 'normal' },
-    { id: 'm1',  x: START_X + 3*DIGIT_WIDTH + 3*DIGIT_SPACING + COLON_WIDTH + DIGIT_WIDTH/2, targets: [], currentLabel: null, type: 'minute_last' }
+function createDigitShape(centerX, centerY, dotArray, width, height) {
+  let radius = 2;
+  
+  // 10 Punkte in LCD-Style anordnen (3x4 Grid mit 2 zusätzlichen)
+  let positions = [
+    // Obere Reihe (3 Punkte)
+    {x: centerX - width/3, y: centerY - height/2},
+    {x: centerX, y: centerY - height/2},
+    {x: centerX + width/3, y: centerY - height/2},
+    
+    // Obere Mitte (2 Punkte)
+    {x: centerX - width/3, y: centerY - height/4},
+    {x: centerX + width/3, y: centerY - height/4},
+    
+    // Untere Mitte (2 Punkte)
+    {x: centerX - width/3, y: centerY + height/4},
+    {x: centerX + width/3, y: centerY + height/4},
+    
+    // Untere Reihe (3 Punkte)
+    {x: centerX - width/3, y: centerY + height/2},
+    {x: centerX, y: centerY + height/2},
+    {x: centerX + width/3, y: centerY + height/2}
   ];
-
-  updateTime();
+  
+  for (let i = 0; i < 10; i++) {
+    let dot = Matter.Bodies.circle(positions[i].x, positions[i].y, radius, { 
+      isStatic: true,
+      render: { fillStyle: colors.gray }
+    });
+    Matter.World.add(world, dot);
+    dotArray.push(dot);
+  }
 }
 
 function draw() {
-  background(COLORS.background);
-  Engine.update(engine);
-
-  updateTime();
-  updatePhysics();
-
-  // Border
-  drawBorder();
+  background(colors.background);
   
-  // Doppelpunkt
-  drawColon();
+  // Matter.js Engine update
+  Matter.Engine.update(engine);
   
-  // Statische Punkte zeichnen
-  digits.forEach(digit => {
-    drawStaticDigit(digit);
-  });
-
-  // Fliegende blaue Punkte
-  drawFlyingBodies();
-
-  // Debug
-  drawDebugInfo();
-}
-
-function updateTime() {
+  // Aktuelle Zeit holen
   let now = new Date();
-  h = now.getHours();
-  m = now.getMinutes();
-  s = now.getSeconds();
-
-  // Bei neuer Minute: Explosion der letzten Minutenziffer
-  if (m !== lastMinute && lastMinute !== -1) {
-    explodeLastMinuteDigit();
-  }
-  lastMinute = m;
-
-  // Bei neuer Stunde: Reset
-  if (h !== lastHour && lastHour !== -1) {
-    resetHourDigit();
-  }
-  lastHour = h;
-
-  // Labels aktualisieren
-  updateDigitLabel(digits[0], Math.floor(h/10).toString());
-  updateDigitLabel(digits[1], (h%10).toString());
-  updateDigitLabel(digits[2], Math.floor(m/10).toString());
-  updateDigitLabel(digits[3], (m%10).toString());
+  let hours = now.getHours();
+  let minutes = now.getMinutes();
+  let seconds = now.getSeconds();
+  
+  // Punkte entsprechend der Zeit einfärben
+  updateDots(hours, minutes, seconds);
+  
+  // Alle Punkte zeichnen
+  drawDots();
+  
+  // Doppelpunkte zwischen den Ziffern
+  drawColons(width/2);
 }
 
-function updateDigitLabel(digit, newLabel) {
-  if (digit.currentLabel !== newLabel) {
-    digit.currentLabel = newLabel;
-    
-    if (digit.type === 'minute_last') {
-      // Letzte Minutenziffer: immer 60 Punkte
-      digit.targets = generateTargetPoints(newLabel, digit.x, BASELINE_Y, POINTS_PER_MINUTE_DIGIT);
+function updateDots(hours, minutes, seconds) {
+  // Alle Punkte zurücksetzen
+  resetAllDots();
+  
+  // Aktuelle Ziffern anzeigen
+  let tensHoursDigit = Math.floor(hours / 10);
+  let hoursDigit = hours % 10;
+  let tensMinutesDigit = Math.floor(minutes / 10);
+  let minutesDigit = minutes % 10;
+  let tensSecondsDigit = Math.floor(seconds / 10);
+  let secondsDigit = seconds % 10;
+  
+  // Progressive Färbung basierend auf Zeit
+  updateDigitProgressive(dots.tensHours, tensHoursDigit, hours, 24); // 24 Stunden
+  updateDigitProgressive(dots.hours, hoursDigit, hours % 10, 10);
+  updateDigitProgressive(dots.tensMinutes, tensMinutesDigit, minutes, 60); // 60 Minuten
+  updateDigitProgressive(dots.minutes, minutesDigit, minutes % 10, 10);
+  updateDigitProgressive(dots.tensSeconds, tensSecondsDigit, seconds, 60); // 60 Sekunden
+  updateDigitProgressive(dots.seconds, secondsDigit, seconds % 10, 10);
+}
+
+function updateDigitProgressive(dotArray, currentDigit, currentValue, maxValue) {
+  // Zuerst die Form der aktuellen Ziffer anzeigen
+  let pattern = digitShapes[currentDigit];
+  
+  // Dann progressive Färbung basierend auf Zeit
+  let progress = currentValue / maxValue;
+  let dotsToFill = Math.floor(progress * dotArray.length);
+  
+  for (let i = 0; i < dotArray.length; i++) {
+    if (i < dotsToFill && pattern[i] === 1) {
+      dotArray[i].render.fillStyle = colors.accent;
+    } else if (pattern[i] === 1) {
+      dotArray[i].render.fillStyle = colors.gray;
     } else {
-      // Andere Ziffern: normale Punktverteilung
-      digit.targets = generateTargetPoints(newLabel, digit.x, BASELINE_Y, 50);
+      dotArray[i].render.fillStyle = colors.background; // Unsichtbar
     }
   }
 }
 
-function generateTargetPoints(label, centerX, centerY, pointCount) {
-  // Text rendern mit besserer Auflösung
-  let pg = createGraphics(DIGIT_WIDTH * 3, DIGIT_HEIGHT * 3);
-  pg.background(0);
-  pg.fill(255);
-  pg.textAlign(CENTER, CENTER);
-  pg.textSize(DIGIT_HEIGHT * 1.2);
-  pg.textFont('monospace');
-  pg.textStyle(BOLD);
-  pg.text(label, pg.width/2, pg.height/2);
-  pg.loadPixels();
-
-  // Pixel sampeln mit höherer Dichte
-  let points = [];
-  let step = 2;
-  
-  for (let x = 0; x < pg.width; x += step) {
-    for (let y = 0; y < pg.height; y += step) {
-      let index = (x + y * pg.width) * 4;
-      if (pg.pixels[index] > 128) {
-        let worldX = centerX - pg.width/2 + x;
-        let worldY = centerY - pg.height/2 + y;
-        points.push({ x: worldX, y: worldY });
-      }
-    }
-  }
-
-  // Auf gewünschte Anzahl bringen
-  while (points.length < pointCount) {
-    if (points.length === 0) {
-      points.push({ x: centerX, y: centerY });
-    } else {
-      points.push(...points.slice(0, Math.min(points.length, pointCount - points.length)));
-    }
-  }
-
-  // Mischen für gleichmäßige Füllung
-  for (let i = points.length - 1; i > 0; i--) {
-    let j = Math.floor(Math.random() * (i + 1));
-    [points[i], points[j]] = [points[j], points[i]];
-  }
-
-  return points.slice(0, pointCount);
-}
-
-function updatePhysics() {
-  // Fliegende Körper zu ihren Zielen bewegen
-  flyingBodies.forEach((body, index) => {
-    if (body.target) {
-      let distance = dist(body.position.x, body.position.y, body.target.x, body.target.y);
-      
-      if (distance < LOCK_DISTANCE) {
-        // Angekommen - Body entfernen
-        World.remove(world, body);
-        flyingBodies.splice(index, 1);
-        return;
-      }
-      
-      // Sehr langsame Bewegung zum Ziel
-      let force = 0.00005; // Extrem reduzierte Kraft
-      Body.applyForce(body, body.position, {
-        x: (body.target.x - body.position.x) * force,
-        y: (body.target.y - body.position.y) * force
-      });
-    }
-
-    // Abstoßung von fremden Ziffern
-    applyRepulsionForces(body);
-    
-    // Sehr niedrige Geschwindigkeitsbegrenzung
-    let maxSpeed = 0.8; // Deutlich reduziert von 3 auf 0.8
-    if (body.velocity.x > maxSpeed) Body.setVelocity(body, { x: maxSpeed, y: body.velocity.y });
-    if (body.velocity.x < -maxSpeed) Body.setVelocity(body, { x: -maxSpeed, y: body.velocity.y });
-    if (body.velocity.y > maxSpeed) Body.setVelocity(body, { x: body.velocity.x, y: maxSpeed });
-    if (body.velocity.y < -maxSpeed) Body.setVelocity(body, { x: body.velocity.x, y: -maxSpeed });
-  });
-
-  // Neue fliegende Körper für letzte Minutenziffer (1 pro Sekunde)
-  let lastDigit = digits[3];
-  let currentFlying = flyingBodies.filter(b => b.digitId === 'm1').length;
-  let neededTotal = s;
-  
-  if (currentFlying < neededTotal && lastDigit.targets.length > 0) {
-    let targetIndex = currentFlying;
-    if (targetIndex < lastDigit.targets.length) {
-      createFlyingBody('m1', lastDigit.targets[targetIndex]);
-    }
-  }
-}
-
-function applyRepulsionForces(body) {
-  digits.forEach(digit => {
-    // Nur von fremden Ziffern abstoßen
-    if (digit.id !== body.digitId && digit.targets.length > 0) {
-      digit.targets.forEach(target => {
-        let distance = dist(body.position.x, body.position.y, target.x, target.y);
-        
-        if (distance < REPULSION_DISTANCE && distance > 0) {
-          // Sehr schwache Abstoßungskraft
-          let repulsionForce = 0.00002 * (REPULSION_DISTANCE - distance) / distance; // Reduziert von 0.0001
-          let dx = body.position.x - target.x;
-          let dy = body.position.y - target.y;
-          
-          Body.applyForce(body, body.position, {
-            x: dx * repulsionForce,
-            y: dy * repulsionForce
-          });
-        }
-      });
-    }
-  });
-}
-
-function createFlyingBody(digitId, target) {
-  // Zufällige Startposition im ganzen Canvas
-  let body = Bodies.circle(
-    random(50, width-50),
-    random(50, height-50),
-    RADIUS,
-    {
-      friction: 0.8,        // Viel mehr Reibung (war 0.3)
-      frictionAir: 0.15,    // Viel mehr Luftwiderstand (war 0.05)
-      restitution: 0.3,     // Noch weniger Sprungkraft (war 0.6)
-      density: 0.0005       // Leichter
-    }
-  );
-  
-  body.target = target;
-  body.digitId = digitId;
-  
-  // Minimale zufällige Anfangsgeschwindigkeit
-  Body.setVelocity(body, {
-    x: random(-0.2, 0.2), // Reduziert von -1,1 auf -0.2,0.2
-    y: random(-0.2, 0.2)
-  });
-  
-  World.add(world, body);
-  flyingBodies.push(body);
-}
-
-function explodeLastMinuteDigit() {
-  // Alle fliegenden Punkte der letzten Minutenziffer explodieren
-  flyingBodies.forEach(body => {
-    if (body.digitId === 'm1') {
-      let angle = random(TWO_PI);
-      let force = random(0.002, 0.005); // Deutlich reduzierte Explosionskraft (war 0.005-0.015)
-      Body.applyForce(body, body.position, {
-        x: cos(angle) * force,
-        y: sin(angle) * force
-      });
-    }
-  });
-
-  // Nach 2 Sekunden alle m1-Körper entfernen
-  setTimeout(() => {
-    flyingBodies = flyingBodies.filter(body => {
-      if (body.digitId === 'm1') {
-        World.remove(world, body);
-        return false;
-      }
-      return true;
+function resetAllDots() {
+  Object.values(dots).forEach(dotArray => {
+    dotArray.forEach(dot => {
+      dot.render.fillStyle = colors.gray;
     });
-  }, 2000);
+  });
 }
 
-function resetHourDigit() {
-  // Stundenziffer-Reset bei neuer Stunde
-  // Hier könnte man die Füllung zurücksetzen falls gewünscht
-}
-
-function drawStaticDigit(digit) {
-  if (digit.targets.length === 0) return;
-  
-  noStroke();
-  
-  digit.targets.forEach((target, index) => {
-    let shouldDraw = true;
-    let isBlue = false;
-    
-    if (digit.type === 'hour_fill' && digit.id === 'h1') {
-      // Stundenziffer: füllt sich über 60 Minuten
-      isBlue = index < m;
-    } else if (digit.type === 'minute_last') {
-      // Letzte Minutenziffer: nur graue Punkte zeigen, die noch nicht geflogen sind
-      shouldDraw = index >= s;
-      isBlue = false;
-    }
-    
-    if (shouldDraw) {
-      if (isBlue) {
-        fill(...COLORS.dynamic);
-      } else {
-        fill(COLORS.static);
+function drawDots() {
+  Object.values(dots).forEach(dotArray => {
+    dotArray.forEach(dot => {
+      if (dot.render.fillStyle !== colors.background) {
+        fill(dot.render.fillStyle);
+        noStroke();
+        circle(dot.position.x, dot.position.y, dot.circleRadius * 2);
       }
-      ellipse(target.x, target.y, RADIUS * 2);
-    }
+    });
   });
 }
 
-function drawFlyingBodies() {
+function drawColons(centerX) {
+  fill(colors.gray);
   noStroke();
-  fill(...COLORS.dynamic);
-  
-  flyingBodies.forEach(body => {
-    ellipse(body.position.x, body.position.y, RADIUS * 2);
-  });
-}
-
-function drawBorder() {
-  noFill();
-  stroke(COLORS.border);
-  strokeWeight(8);
-  rect(4, 4, width-8, height-8);
-}
-
-function drawColon() {
-  let colonX = START_X + 2*DIGIT_WIDTH + DIGIT_SPACING + COLON_WIDTH/2;
-  noStroke();
-  fill(COLORS.static);
-  ellipse(colonX, BASELINE_Y - 35, RADIUS * 2);
-  ellipse(colonX, BASELINE_Y + 35, RADIUS * 2);
-}
-
-function drawDebugInfo() {
-  fill(255);
-  textAlign(LEFT);
-  textSize(14);
-  text(`Zeit: ${nf(h,2)}:${nf(m,2)}:${nf(s,2)}`, 20, 30);
-  text(`Fliegende Punkte: ${flyingBodies.length}`, 20, 50);
-  text(`Stundenziffer (h1) gefüllt: ${m}/60`, 20, 70);
-  text(`Minutenziffer Sekunden: ${s}/60`, 20, 90);
-  text(`Pfeiltasten: Gravitation`, 20, 110);
-}
-
-// Pfeiltasten für Gravitation
-function keyPressed() {
-  let gravity = 0.1; // Deutlich reduzierte Gravitationsstärke (war 0.3)
-  switch(keyCode) {
-    case UP_ARROW:
-      world.gravity.x = 0;
-      world.gravity.y = -gravity;
-      break;
-    case DOWN_ARROW:
-      world.gravity.x = 0;
-      world.gravity.y = gravity;
-      break;
-    case LEFT_ARROW:
-      world.gravity.x = -gravity;
-      world.gravity.y = 0;
-      break;
-    case RIGHT_ARROW:
-      world.gravity.x = gravity;
-      world.gravity.y = 0;
-      break;
-  }
-}
-
-function keyReleased() {
-  world.gravity.x = 0;
-  world.gravity.y = 0.02; // Minimale Standard-Gravitation (war 0.1)
+  // Doppelpunkte zwischen HH:MM:SS
+  circle(centerX - 50, height/2 - 10, 3);
+  circle(centerX - 50, height/2 + 10, 3);
+  circle(centerX + 50, height/2 - 10, 3);
+  circle(centerX + 50, height/2 + 10, 3);
 }
