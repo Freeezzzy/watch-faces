@@ -1,232 +1,1008 @@
+// -----------------------------------------------------------------------------
+// WatchFace - Abstrakte digitale Punktuhr für SmartWatch
+// 960×960 px, Schwarz/Weiß/Blau
+// Digitale Uhr aus 60-Punkt-Grid mit 240 Partikeln (Verbrauchssystem)
+// Mit Pfeiltasten-Gravitationssteuerung für frei fliegende Partikel
+// KORRIGIERT: m10=Minuten (0-59), m1=Sekunden (0-59), h=Stunden (0-23)
+// FIXED: Doppelte Zählung behoben + korrekte Updates
+// -----------------------------------------------------------------------------
+
+const Engine = Matter.Engine,
+      World = Matter.World,
+      Bodies = Matter.Bodies,
+      Body = Matter.Body;
+
 let engine, world;
-let staticDots = {
-  tensHours: [],
-  hours: [],
-  tensMinutes: [],
-  minutes: []
-};
-let physicsDots = [];
-let walls = [];
+let boundaries = [];
 
-// Farben entsprechend den Vorgaben
-const colors = {
-  background: '#000000',
-  gray: '#666666',
-  accent: '#0080FF'
+// Konstanten
+const CANVAS_SIZE = 960;
+const POINTS_PER_DIGIT = 60;
+const COLORS = {
+  background: 0,        // Schwarz
+  static: 170,          // Grau für statische Punkte
+  dynamic: [0, 100, 255] // Blau für fliegende/aktive Punkte
+};
+const RADIUS = 4;
+const CAPTURE_DISTANCE = 12;
+
+// Typography Layout
+const DIGIT_WIDTH = 140;
+const DIGIT_HEIGHT = 200;
+const DIGIT_SPACING = 60;
+const COLON_WIDTH = 30;
+
+// Grid Layout für 60 Punkte (12×5)
+const GRID_COLS = 12;
+const GRID_ROWS = 5;
+const POINT_SPACING_X = DIGIT_WIDTH / (GRID_COLS + 1);
+const POINT_SPACING_Y = DIGIT_HEIGHT / (GRID_ROWS + 1);
+
+const TOTAL_WIDTH = (4 * DIGIT_WIDTH) + (3 * DIGIT_SPACING) + COLON_WIDTH;
+const START_X = (CANVAS_SIZE - TOTAL_WIDTH) / 2;
+const BASELINE_Y = CANVAS_SIZE / 2;
+
+// Partikel-Pools: 120 für Minuten + 120 für Stunden = 240 total
+const MINUTE_PARTICLES = 120; // Für m10 (Minuten) und m1 (Sekunden)
+const HOUR_PARTICLES = 120;   // Für h10 und h1 (Stunden)
+
+// GEÄNDERT: Stärkere Gravitation und Anti-Clumping
+const GRAVITY_FORCE = 0.0008; // Deutlich stärker (fast 3x)
+const REPULSION_FORCE = 0.00004; // Schwache Abstoßung zwischen Partikeln
+const REPULSION_DISTANCE = 25; // Abstand für Abstoßung
+
+// NEU: Tastenstatus für dauerhafte Gravitation
+let keys = {
+  up: false,
+  down: false,
+  left: false,
+  right: false
 };
 
-// 7-Segment Display Patterns (21 Punkte pro Ziffer)
-const digitShapes = {
-  0: [1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-  1: [0,0,0,1,1,1,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-  2: [1,1,1,1,1,1,0,1,1,1,1,1,1,0,0,0,1,1,1,0,0],
-  3: [1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,0,0,1,1],
-  4: [0,0,0,1,1,1,0,1,1,1,0,0,0,1,1,1,1,1,1,0,0],
-  5: [1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
-  6: [1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-  7: [1,1,1,1,1,1,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-  8: [1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-  9: [1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0]
-};
+// Zeitvariablen
+let h = 0, m = 0, s = 0;
+let lastSecond = -1;
+let lastMinute = -1;
+let lastHour = -1;
 
-let previousDigits = [0,0,0,0];
+// Digit-Daten
+let digits = [];
+let minuteParticles = []; // 120 Partikel für m10 (Minuten) und m1 (Sekunden)
+let hourParticles = [];   // 120 Partikel für h10 und h1 (Stunden)
+
+// 5x7 Pixel Font Definitionen (Zeile für Zeile, von oben nach unten)
+const PIXEL_PATTERNS = {
+  0: [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1]
+  ],
+  1: [
+    [0,0,1,0,0],
+    [0,1,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [1,1,1,1,1]
+  ],
+  2: [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1]
+  ],
+  3: [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1]
+  ],
+  4: [
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1]
+  ],
+  5: [
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1]
+  ],
+  6: [
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1]
+  ],
+  7: [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [0,0,0,1,0],
+    [0,0,1,0,0],
+    [0,1,0,0,0],
+    [1,0,0,0,0]
+  ],
+  8: [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1]
+  ],
+  9: [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1]
+  ]
+};
 
 function setup() {
-  let canvas = createCanvas(396, 484);
-  canvas.parent('thecanvas');
+  createCanvas(CANVAS_SIZE, CANVAS_SIZE);
   
-  engine = Matter.Engine.create();
+  // Matter.js Setup
+  engine = Engine.create();
   world = engine.world;
-  engine.world.gravity.y = 0.3;
   
-  createStaticDots();
-  createWalls();
-}
+  // KORREKTUR: Keine Standard-Gravitation (Weltall-Physik)
+  world.gravity.scale = 0;
+  world.gravity.x = 0;
+  world.gravity.y = 0;
 
-function createStaticDots() {
-  let centerX = width / 2;
-  let centerY = height / 2;
-  
-  let positions = [
-    {x: centerX - 90, y: centerY - 20},
-    {x: centerX - 30, y: centerY - 20},
-    {x: centerX + 30, y: centerY - 20},
-    {x: centerX + 90, y: centerY - 20}
+  // Unsichtbare Wände - Border nicht sichtbar aber funktional
+  let wallThickness = 30;
+  boundaries = [
+    Bodies.rectangle(width/2, -wallThickness/2, width, wallThickness, { isStatic: true }),
+    Bodies.rectangle(width/2, height + wallThickness/2, width, wallThickness, { isStatic: true }),
+    Bodies.rectangle(-wallThickness/2, height/2, wallThickness, height, { isStatic: true }),
+    Bodies.rectangle(width + wallThickness/2, height/2, wallThickness, height, { isStatic: true })
   ];
-  
-  let dotArrays = [staticDots.tensHours, staticDots.hours, staticDots.tensMinutes, staticDots.minutes];
-  
-  for (let i = 0; i < 4; i++) {
-    createDigitShape(positions[i].x, positions[i].y, dotArrays[i]);
-  }
-}
+  World.add(world, boundaries);
 
-function createDigitShape(centerX, centerY, dotArray) {
-  let segments = [
-    [{x: centerX-12, y: centerY-25}, {x: centerX, y: centerY-25}, {x: centerX+12, y: centerY-25}],
-    [{x: centerX+15, y: centerY-20}, {x: centerX+15, y: centerY-10}, {x: centerX+15, y: centerY-5}],
-    [{x: centerX+15, y: centerY+5}, {x: centerX+15, y: centerY+10}, {x: centerX+15, y: centerY+20}],
-    [{x: centerX-12, y: centerY+25}, {x: centerX, y: centerY+25}, {x: centerX+12, y: centerY+25}],
-    [{x: centerX-15, y: centerY+5}, {x: centerX-15, y: centerY+10}, {x: centerX-15, y: centerY+20}],
-    [{x: centerX-15, y: centerY-20}, {x: centerX-15, y: centerY-10}, {x: centerX-15, y: centerY-5}],
-    [{x: centerX-12, y: centerY}, {x: centerX, y: centerY}, {x: centerX+12, y: centerY}]
-  ];
-  
-  for (let segment of segments) {
-    for (let point of segment) {
-      dotArray.push({x: point.x, y: point.y, radius: 2});
+  // Digits erstellen - alle mit 60 Punkten im Grid
+  digits = [
+    { 
+      id: 'h10', 
+      x: START_X + DIGIT_WIDTH/2, 
+      targets: [], 
+      bluePoints: 0,
+      targetBluePoints: 0
+    },
+    { 
+      id: 'h1', 
+      x: START_X + DIGIT_WIDTH + DIGIT_SPACING + DIGIT_WIDTH/2, 
+      targets: [], 
+      bluePoints: 0,
+      targetBluePoints: 0
+    },
+    { 
+      id: 'm10', // KORRIGIERT: Zeigt aktuelle Minuten (0-59), 1 Punkt pro Minute
+      x: START_X + 2*DIGIT_WIDTH + 2*DIGIT_SPACING + COLON_WIDTH + DIGIT_WIDTH/2, 
+      targets: [], 
+      bluePoints: 0,
+      targetBluePoints: 0
+    },
+    { 
+      id: 'm1', // Zeigt aktuelle Sekunden (0-59), 1 Punkt pro Sekunde
+      x: START_X + 3*DIGIT_WIDTH + 3*DIGIT_SPACING + COLON_WIDTH + DIGIT_WIDTH/2, 
+      targets: [], 
+      bluePoints: 0,
+      targetBluePoints: 0
     }
-  }
-}
+  ];
 
-function createWalls() {
-  walls.push(Matter.Bodies.rectangle(width/2, -10, width, 20, { isStatic: true }));
-  walls.push(Matter.Bodies.rectangle(width/2, height+10, width, 20, { isStatic: true }));
-  walls.push(Matter.Bodies.rectangle(-10, height/2, 20, height, { isStatic: true }));
-  walls.push(Matter.Bodies.rectangle(width+10, height/2, 20, height, { isStatic: true }));
+  updateTime();
+  generateAllDigitGrids();
   
-  for (let wall of walls) {
-    Matter.World.add(world, wall);
-  }
+  // Erstelle die beiden Partikel-Pools
+  createParticlePools();
+  
+  // NEU: Sofortige Initialisierung für aktuelle Zeit
+  initializeCurrentTime();
 }
 
 function draw() {
-  background(colors.background);
-  Matter.Engine.update(engine);
+  background(COLORS.background);
+  Engine.update(engine);
+
+  updateTime();
+  updateTargetBluePoints();
   
+  // NEU: Dauerhafte Gravitationsanwendung
+  applyContinuousGravity();
+  
+  updatePhysics();
+
+  // Doppelpunkt zwischen Stunden und Minuten
+  drawColon();
+  
+  // Alle Ziffern zeichnen
+  digits.forEach(digit => {
+    drawDigit(digit);
+  });
+
+  // Fliegende blaue Partikel
+  drawFlyingParticles();
+
+  // Debug Info
+  drawDebugInfo();
+}
+
+function createParticlePools() {
+  // Erstelle 120 Minuten-Partikel (für m10 Minuten + m1 Sekunden)
+  for (let i = 0; i < MINUTE_PARTICLES; i++) {
+    let body = Bodies.circle(
+      random(50, width - 50),
+      random(50, height - 50),
+      RADIUS,
+      {
+        friction: 0.3,
+        frictionAir: 0.03,
+        restitution: 0.7,
+        density: random(0.0008, 0.0012) // Unterschiedliche Masse
+      }
+    );
+    
+    Body.setVelocity(body, {
+      x: random(-0.8, 0.8),
+      y: random(-0.8, 0.8)
+    });
+    
+    World.add(world, body);
+    
+    minuteParticles.push({
+      body: body,
+      target: null,
+      digitId: null,
+      isActive: false,
+      isConsumed: false,
+      // GEÄNDERT: Größere individuelle Unterschiede
+      gravityMultiplier: random(0.3, 1.8), // Viel größere Variation
+      speedMultiplier: random(0.5, 2.0), // Individuelle Geschwindigkeit
+      driftAngle: random(TWO_PI), // Zufällige Drift-Richtung
+      driftSpeed: random(0.0001, 0.0003), // Individuelle Drift-Geschwindigkeit
+      angleChangeSpeed: random(0.01, 0.04) // Wie schnell sich Richtung ändert
+    });
+  }
+  
+  // Erstelle 120 Stunden-Partikel (für h10 + h1)
+  for (let i = 0; i < HOUR_PARTICLES; i++) {
+    let body = Bodies.circle(
+      random(50, width - 50),
+      random(50, height - 50),
+      RADIUS,
+      {
+        friction: 0.3,
+        frictionAir: 0.03,
+        restitution: 0.7,
+        density: random(0.0008, 0.0012) // Unterschiedliche Masse
+      }
+    );
+    
+    Body.setVelocity(body, {
+      x: random(-0.8, 0.8),
+      y: random(-0.8, 0.8)
+    });
+    
+    World.add(world, body);
+    
+    hourParticles.push({
+      body: body,
+      target: null,
+      digitId: null,
+      isActive: false,
+      isConsumed: false,
+      // GEÄNDERT: Größere individuelle Unterschiede
+      gravityMultiplier: random(0.3, 1.8), // Viel größere Variation
+      speedMultiplier: random(0.5, 2.0), // Individuelle Geschwindigkeit
+      driftAngle: random(TWO_PI), // Zufällige Drift-Richtung
+      driftSpeed: random(0.0001, 0.0003), // Individuelle Drift-Geschwindigkeit
+      angleChangeSpeed: random(0.01, 0.04) // Wie schnell sich Richtung ändert
+    });
+  }
+}
+
+// NEU: Initialisierung für aktuelle Zeit beim Start
+function initializeCurrentTime() {
+  console.log(`Initialisiere aktuelle Zeit: ${h}:${m}:${s}`);
+  
+  // Stunden-Partikel zuweisen (h10 + h1 bekommen jeweils h Partikel)
+  for (let i = 0; i < h; i++) {
+    // h10 (erste Stundenziffer)
+    let availableHourParticles = hourParticles.filter(p => !p.isActive && !p.isConsumed);
+    if (availableHourParticles.length > 0 && digits[0].targets.length > 0) {
+      let particle = availableHourParticles[0];
+      let targetIndex = digits[0].bluePoints;
+      if (targetIndex < digits[0].targets.length) {
+        particle.target = digits[0].targets[targetIndex];
+        particle.digitId = 'h10';
+        particle.isActive = true;
+        digits[0].bluePoints++; // Sofort erhöhen für nächsten Partikel
+      }
+    }
+    
+    // h1 (zweite Stundenziffer)
+    availableHourParticles = hourParticles.filter(p => !p.isActive && !p.isConsumed);
+    if (availableHourParticles.length > 0 && digits[1].targets.length > 0) {
+      let particle = availableHourParticles[0];
+      let targetIndex = digits[1].bluePoints;
+      if (targetIndex < digits[1].targets.length) {
+        particle.target = digits[1].targets[targetIndex];
+        particle.digitId = 'h1';
+        particle.isActive = true;
+        digits[1].bluePoints++; // Sofort erhöhen für nächsten Partikel
+      }
+    }
+  }
+  
+  // Minuten-Partikel zuweisen (m10 bekommt m Partikel)
+  for (let i = 0; i < m; i++) {
+    let availableMinuteParticles = minuteParticles.filter(p => !p.isActive && !p.isConsumed);
+    if (availableMinuteParticles.length > 0 && digits[2].targets.length > 0) {
+      let particle = availableMinuteParticles[0];
+      let targetIndex = digits[2].bluePoints;
+      if (targetIndex < digits[2].targets.length) {
+        particle.target = digits[2].targets[targetIndex];
+        particle.digitId = 'm10';
+        particle.isActive = true;
+        digits[2].bluePoints++; // Sofort erhöhen für nächsten Partikel
+      }
+    }
+  }
+  
+  // Sekunden-Partikel zuweisen (m1 bekommt s Partikel)
+  for (let i = 0; i < s; i++) {
+    let availableMinuteParticles = minuteParticles.filter(p => !p.isActive && !p.isConsumed);
+    if (availableMinuteParticles.length > 0 && digits[3].targets.length > 0) {
+      let particle = availableMinuteParticles[0];
+      let targetIndex = digits[3].bluePoints;
+      if (targetIndex < digits[3].targets.length) {
+        particle.target = digits[3].targets[targetIndex];
+        particle.digitId = 'm1';
+        particle.isActive = true;
+        digits[3].bluePoints++; // Sofort erhöhen für nächsten Partikel
+      }
+    }
+  }
+  
+  console.log(`Initialisierung abgeschlossen. Partikel zugewiesen: h10=${digits[0].bluePoints}, h1=${digits[1].bluePoints}, m10=${digits[2].bluePoints}, m1=${digits[3].bluePoints}`);
+}
+
+function updateTime() {
   let now = new Date();
-  let hours = now.getHours();
-  let minutes = now.getMinutes();
-  let seconds = now.getSeconds();
-  
-  let currentDigits = [
-    Math.floor(hours / 10),
-    hours % 10,
-    Math.floor(minutes / 10),
-    minutes % 10
-  ];
-  
-  checkForDigitChanges(currentDigits);
-  
-  drawStaticDots(currentDigits);
-  drawPhysicsDots();
-  createBlueDots(currentDigits, seconds);
-  drawColons(width / 2);
-  
-  previousDigits = [...currentDigits];
+  h = now.getHours();
+  m = now.getMinutes();
+  s = now.getSeconds();
+
+  // Bei neuer Sekunde: weise Partikel für m1 (Sekunden) zu
+  if (s !== lastSecond) {
+    assignParticlesForSecond();
+    lastSecond = s;
+  }
+
+  // KORRIGIERT: Bei neuer Minute: weise Partikel für m10 (Minuten) zu + Reset m1
+  if (m !== lastMinute && lastMinute !== -1) {
+    assignParticlesForMinute(); // m10 bekommt +1 Punkt
+    resetAndExplodeSecondsParticles(); // m1 (Sekunden) Reset
+    lastMinute = m;
+  } else if (lastMinute === -1) {
+    lastMinute = m;
+  }
+
+  // Bei neuer Stunde: weise Partikel für Stunden zu + Reset m10
+  if (h !== lastHour && lastHour !== -1) {
+    assignParticlesForHour(); // h10, h1 bekommen +1 Punkt
+    resetAndExplodeMinuteParticles(); // m10 (Minuten) Reset
+    lastHour = h;
+  } else if (lastHour === -1) {
+    lastHour = h;
+  }
 }
 
-function checkForDigitChanges(currentDigits) {
-  for (let i = 0; i < 4; i++) {
-    if (currentDigits[i] !== previousDigits[i]) {
-      explodeBlueDots(i);
+function updateTargetBluePoints() {
+  // Berechne aktuelle Ziffern
+  let h10 = Math.floor(h / 10);
+  let h1 = h % 10;
+  let m10 = Math.floor(m / 10);
+  let m1 = Math.floor(s / 10); // Zeigt Zehner der Sekunden
+  
+  // Setze Ziel-Werte basierend auf aktueller Ziffer
+  digits[0].targetBluePoints = getPointsForDigit(h10); // h10
+  digits[1].targetBluePoints = getPointsForDigit(h1);  // h1
+  digits[2].targetBluePoints = getPointsForDigit(m10); // m10
+  digits[3].targetBluePoints = getPointsForDigit(m1);  // m1 (Sekunden-Zehner)
+}
+
+// Vereinfachte getPointsForDigit - alle Punkte sind Teil der Zahl
+function getPointsForDigit(digit) {
+  if (digit < 0 || digit > 9) return 0;
+  
+  const pattern = PIXEL_PATTERNS[digit];
+  let activePixels = 0;
+  
+  // Zähle aktive Pixel in der 5x7 Matrix
+  for (let row = 0; row < 7; row++) {
+    for (let col = 0; col < 5; col++) {
+      if (pattern[row][col] === 1) {
+        activePixels++;
+      }
+    }
+  }
+  
+  // Nutze fast alle 60 Punkte - nur die zur Zahlenform gehören
+  // Mehr aktive Pixel = mehr Punkte werden gefüllt
+  return Math.min(activePixels * 1.7, 60);
+}
+
+// FIXED: Weise Partikel für Sekunden zu (m1) - bluePoints wird SOFORT erhöht
+function assignParticlesForSecond() {
+  // Für m1 (Sekunden) - 1 Partikel pro Sekunde
+  if (digits[3].bluePoints < s) {
+    let availableParticles = minuteParticles.filter(p => !p.isActive && !p.isConsumed);
+    if (availableParticles.length > 0 && digits[3].targets.length > 0) {
+      let particle = availableParticles[0];
+      let targetIndex = digits[3].bluePoints;
+      if (targetIndex < digits[3].targets.length) {
+        particle.target = digits[3].targets[targetIndex];
+        particle.digitId = 'm1';
+        particle.isActive = true;
+        digits[3].bluePoints++; // KORREKTUR: Sofort erhöhen!
+      }
     }
   }
 }
 
-function explodeBlueDots(digitIndex) {
-  physicsDots.forEach(dot => {
-    if (dot.digitIndex === digitIndex && !dot.exploded) {
-      Matter.Body.setStatic(dot.body, false);
+// FIXED: Weise Partikel für Minuten zu (m10) - bluePoints wird SOFORT erhöht
+function assignParticlesForMinute() {
+  // Für m10 (Minuten) - 1 Partikel pro Minute
+  if (digits[2].bluePoints < m) {
+    let availableParticles = minuteParticles.filter(p => !p.isActive && !p.isConsumed);
+    if (availableParticles.length > 0 && digits[2].targets.length > 0) {
+      let particle = availableParticles[0];
+      let targetIndex = digits[2].bluePoints;
+      if (targetIndex < digits[2].targets.length) {
+        particle.target = digits[2].targets[targetIndex];
+        particle.digitId = 'm10';
+        particle.isActive = true;
+        digits[2].bluePoints++; // KORREKTUR: Sofort erhöhen!
+      }
+    }
+  }
+}
+
+// FIXED: Weise Partikel für Stunden zu (h10, h1) - bluePoints wird SOFORT erhöht
+function assignParticlesForHour() {
+  // Für h10 (erste Stundenziffer)
+  if (digits[0].bluePoints < h) {
+    let availableParticles = hourParticles.filter(p => !p.isActive && !p.isConsumed);
+    if (availableParticles.length > 0 && digits[0].targets.length > 0) {
+      let particle = availableParticles[0];
+      let targetIndex = digits[0].bluePoints;
+      if (targetIndex < digits[0].targets.length) {
+        particle.target = digits[0].targets[targetIndex];
+        particle.digitId = 'h10';
+        particle.isActive = true;
+        digits[0].bluePoints++; // KORREKTUR: Sofort erhöhen!
+      }
+    }
+  }
+  
+  // Für h1 (letzte Stundenziffer)
+  if (digits[1].bluePoints < h) {
+    let availableParticles = hourParticles.filter(p => !p.isActive && !p.isConsumed);
+    if (availableParticles.length > 0 && digits[1].targets.length > 0) {
+      let particle = availableParticles[0];
+      let targetIndex = digits[1].bluePoints;
+      if (targetIndex < digits[1].targets.length) {
+        particle.target = digits[1].targets[targetIndex];
+        particle.digitId = 'h1';
+        particle.isActive = true;
+        digits[1].bluePoints++; // KORREKTUR: Sofort erhöhen!
+      }
+    }
+  }
+}
+
+// NEU: Reset Sekunden bei neuer Minute
+function resetAndExplodeSecondsParticles() {
+  // Reset der Sekunden-Ziffer
+  digits[3].bluePoints = 0; // m1 (Sekunden)
+  
+  // Alle Sekunden-Partikel "explodieren" und recyceln
+  minuteParticles.forEach(particle => {
+    if (particle.isConsumed && particle.digitId === 'm1') {
+      // Partikel wieder verfügbar machen
+      particle.isConsumed = false;
+      particle.isActive = false;
+      particle.target = null;
+      particle.digitId = null;
       
-      let forceX = (Math.random() - 0.5) * 0.1;
-      let forceY = (Math.random() - 0.5) * 0.1;
-      Matter.Body.applyForce(dot.body, dot.body.position, {x: forceX, y: forceY});
-      dot.exploded = true;
+      // Sanfte Explosion mit individueller Variation
+      let angle = random(TWO_PI);
+      let force = random(0.4, 1.0) * particle.speedMultiplier;
+      Body.setVelocity(particle.body, {
+        x: cos(angle) * force,
+        y: sin(angle) * force
+      });
     }
   });
 }
 
-function drawStaticDots(currentDigits) {
-  let dotArrays = [staticDots.tensHours, staticDots.hours, staticDots.tensMinutes, staticDots.minutes];
+// KORRIGIERT: Reset Minuten bei neuer Stunde
+function resetAndExplodeMinuteParticles() {
+  // Reset der Minuten-Ziffer
+  digits[2].bluePoints = 0; // m10 (Minuten)
   
-  for (let digitIndex = 0; digitIndex < 4; digitIndex++) {
-    let pattern = digitShapes[currentDigits[digitIndex]];
-    let dots = dotArrays[digitIndex];
-    
-    for (let i = 0; i < dots.length; i++) {
-      if (pattern[i] === 1) {
-        fill(colors.gray);
-        noStroke();
-        circle(dots[i].x, dots[i].y, dots[i].radius * 2);
+  // Alle Minuten-Partikel "explodieren" und recyceln
+  minuteParticles.forEach(particle => {
+    if (particle.isConsumed && particle.digitId === 'm10') {
+      // Partikel wieder verfügbar machen
+      particle.isConsumed = false;
+      particle.isActive = false;
+      particle.target = null;
+      particle.digitId = null;
+      
+      // Sanfte Explosion mit individueller Variation
+      let angle = random(TWO_PI);
+      let force = random(0.4, 1.0) * particle.speedMultiplier;
+      Body.setVelocity(particle.body, {
+        x: cos(angle) * force,
+        y: sin(angle) * force
+      });
+    }
+  });
+}
+
+// KORRIGIERT: Reset Stunden bei neuem Tag (falls gewünscht)
+function resetAndExplodeHourParticles() {
+  // Reset der Stundenziffern
+  digits[0].bluePoints = 0; // h10
+  digits[1].bluePoints = 0; // h1
+  
+  // Alle Stunden-Partikel "explodieren" und recyceln
+  hourParticles.forEach(particle => {
+    if (particle.isConsumed) {
+      // Partikel wieder verfügbar machen
+      particle.isConsumed = false;
+      particle.isActive = false;
+      particle.target = null;
+      particle.digitId = null;
+      
+      // Sanfte Explosion mit individueller Variation
+      let angle = random(TWO_PI);
+      let force = random(0.4, 1.0) * particle.speedMultiplier;
+      Body.setVelocity(particle.body, {
+        x: cos(angle) * force,
+        y: sin(angle) * force
+      });
+    }
+  });
+}
+
+// Ersetze die generateDigitGrid Funktion:
+function generateDigitGrid(centerX, centerY) {
+  // Erstelle alle 60 Punkte ALS TEIL der Zahlenform
+  let points = [];
+  
+  // Erweiterte Matrix - 5x7 Basis mit dickeren Linien
+  const baseSpacing = 14;
+  const matrixWidth = 5 * baseSpacing;
+  const matrixHeight = 7 * baseSpacing;
+  
+  const startX = centerX - (matrixWidth / 2) + (baseSpacing / 2);
+  const startY = centerY - (matrixHeight / 2) + (baseSpacing / 2);
+  
+  // 1. Erstelle 35 Basis-Pixel (5x7 Matrix)
+  for (let row = 0; row < 7; row++) {
+    for (let col = 0; col < 5; col++) {
+      let x = startX + (col * baseSpacing);
+      let y = startY + (row * baseSpacing);
+      
+      points.push({
+        x: x + random(-1, 1),
+        y: y + random(-1, 1),
+        row: row,
+        col: col,
+        layer: 0 // Basis-Layer
+      });
+    }
+  }
+  
+  // 2. Erstelle 25 zusätzliche Punkte für DICKERE Linien
+  // Diese werden strategisch um die Basis-Pixel platziert
+  for (let row = 0; row < 7; row++) {
+    for (let col = 0; col < 5; col++) {
+      // Nur für jeden zweiten Pixel (schachbrettartig)
+      if ((row + col) % 2 === 0 && points.length < 60) {
+        let baseX = startX + (col * baseSpacing);
+        let baseY = startY + (row * baseSpacing);
+        
+        // Zufällige Variation um den Basis-Pixel
+        let offsetX = random(-baseSpacing/2.5, baseSpacing/2.5);
+        let offsetY = random(-baseSpacing/2.5, baseSpacing/2.5);
+        
+        points.push({
+          x: baseX + offsetX,
+          y: baseY + offsetY,
+          row: row,
+          col: col,
+          layer: 1 // Verdickung-Layer
+        });
       }
     }
   }
-}
-
-function createBlueDots(currentDigits, seconds) {
-  let dotArrays = [staticDots.tensHours, staticDots.hours, staticDots.tensMinutes, staticDots.minutes];
   
-  for (let digitIndex = 0; digitIndex < 4; digitIndex++) {
-    let pattern = digitShapes[currentDigits[digitIndex]];
-    let dots = dotArrays[digitIndex];
-    
-    // Progressive Färbung nur für Minuten-Ziffern basierend auf Sekunden
-    let shouldFillProgressively = (digitIndex === 2 || digitIndex === 3);
-    let progressPercent = shouldFillProgressively ? seconds / 60.0 : 1.0;
-    
-    let activeDots = [];
-    for (let i = 0; i < dots.length; i++) {
-      if (pattern[i] === 1) {
-        activeDots.push(i);
-      }
-    }
-    
-    let dotsToFill = shouldFillProgressively ? 
-      Math.floor(activeDots.length * progressPercent) : 
-      activeDots.length;
-    
-    for (let j = 0; j < dotsToFill && j < activeDots.length; j++) {
-      let i = activeDots[j];
-      
-      let existingDot = physicsDots.find(pd => 
-        Math.abs(pd.targetX - dots[i].x) < 1 && 
-        Math.abs(pd.targetY - dots[i].y) < 1 && 
-        pd.digitIndex === digitIndex &&
-        !pd.exploded
-      );
-      
-      if (!existingDot) {
-        let blueDot = Matter.Bodies.circle(dots[i].x, dots[i].y, 2, {
-          isStatic: true,
-          restitution: 0.8,
-          render: { fillStyle: colors.accent }
-        });
-        
-        Matter.World.add(world, blueDot);
-        
-        physicsDots.push({
-          body: blueDot,
-          targetX: dots[i].x,
-          targetY: dots[i].y,
-          digitIndex: digitIndex,
-          exploded: false
-        });
-      }
-    }
-  }
+  // Sortiere Punkte von unten nach oben für Füllung
+  points.sort((a, b) => b.y - a.y);
+  
+  return points;
 }
 
-function drawPhysicsDots() {
-  physicsDots = physicsDots.filter(dot => {
-    let pos = dot.body.position;
-    if (dot.exploded && (pos.x < -50 || pos.x > width + 50 || pos.y < -50 || pos.y > height + 50)) {
-      Matter.World.remove(world, dot.body);
-      return false;
+function generateAllDigitGrids() {
+  digits[0].targets = generateDigitGrid(digits[0].x, BASELINE_Y);
+  digits[1].targets = generateDigitGrid(digits[1].x, BASELINE_Y);
+  digits[2].targets = generateDigitGrid(digits[2].x, BASELINE_Y);
+  digits[3].targets = generateDigitGrid(digits[3].x, BASELINE_Y);
+}
+
+function updatePhysics() {
+  // Prüfe Minuten-Partikel (m10 + m1)
+  minuteParticles.forEach(particle => {
+    if (particle.isActive && !particle.isConsumed && checkParticleCapture(particle)) {
+      // Partikel hat sein Ziel erreicht - ist jetzt verbraucht
+      particle.target = null;
+      particle.digitId = null;
+      particle.isActive = false;
+      particle.isConsumed = true; // Partikel ist verbraucht
+      
+    } else if (particle.isActive && particle.target && !particle.isConsumed) {
+      // Führe aktive Partikel zum Ziel (ignoriert Gravitation)
+      guideParticleToTarget(particle);
     }
+    
+    // Geschwindigkeitsbegrenzung mit individueller Geschwindigkeit
+    limitParticleSpeed(particle.body, particle.speedMultiplier);
+  });
+  
+  // Prüfe Stunden-Partikel (h10 + h1)
+  hourParticles.forEach(particle => {
+    if (particle.isActive && !particle.isConsumed && checkParticleCapture(particle)) {
+      // Partikel hat sein Ziel erreicht - ist jetzt verbraucht
+      particle.target = null;
+      particle.digitId = null;
+      particle.isActive = false;
+      particle.isConsumed = true; // Partikel ist verbraucht
+      
+    } else if (particle.isActive && particle.target && !particle.isConsumed) {
+      // Führe aktive Partikel zum Ziel (ignoriert Gravitation)
+      guideParticleToTarget(particle);
+    }
+    
+    // Geschwindigkeitsbegrenzung mit individueller Geschwindigkeit
+    limitParticleSpeed(particle.body, particle.speedMultiplier);
+  });
+}
+
+// FIXED: Keine doppelte Zählung mehr - digit.bluePoints wird NICHT mehr hier erhöht
+function checkParticleCapture(particle) {
+  if (!particle.target || !particle.digitId) return false;
+  
+  let digit = digits.find(d => d.id === particle.digitId);
+  if (!digit) return false;
+  
+  let distance = dist(
+    particle.body.position.x, 
+    particle.body.position.y, 
+    particle.target.x, 
+    particle.target.y
+  );
+  
+  if (distance < CAPTURE_DISTANCE) {
+    // KORREKTUR: Nur return true, KEINE doppelte Zählung mehr!
     return true;
-  });
+  }
   
-  physicsDots.forEach(dot => {
-    fill(colors.accent);
-    noStroke();
-    circle(dot.body.position.x, dot.body.position.y, 4);
+  return false;
+}
+
+function guideParticleToTarget(particle) {
+  if (!particle.target) return;
+  
+  // Sehr schwache Führungskraft für langsame Bewegung
+  let force = 0.00003;
+  let dx = particle.target.x - particle.body.position.x;
+  let dy = particle.target.y - particle.body.position.y;
+  
+  Body.applyForce(particle.body, particle.body.position, {
+    x: dx * force,
+    y: dy * force
   });
 }
 
-function drawColons(centerX) {
-  fill(colors.gray);
+function limitParticleSpeed(body, speedMultiplier = 1.0) {
+  // Individuelle Geschwindigkeitsbegrenzung
+  let maxSpeed = 1.2 * speedMultiplier;
+  let vx = body.velocity.x;
+  let vy = body.velocity.y;
+  
+  if (Math.abs(vx) > maxSpeed || Math.abs(vy) > maxSpeed) {
+    let speed = Math.sqrt(vx * vx + vy * vy);
+    if (speed > maxSpeed) {
+      Body.setVelocity(body, {
+        x: (vx / speed) * maxSpeed,
+        y: (vy / speed) * maxSpeed
+      });
+    }
+  }
+}
+
+// NEU: Verbesserte Gravitations- und Bewegungsfunktion
+function applyContinuousGravity() {
+  // Berechne Gravitationskraft basierend auf gedrückten Tasten
+  let gravityX = 0;
+  let gravityY = 0;
+  
+  if (keys.left) gravityX -= GRAVITY_FORCE;
+  if (keys.right) gravityX += GRAVITY_FORCE;
+  if (keys.up) gravityY -= GRAVITY_FORCE;
+  if (keys.down) gravityY += GRAVITY_FORCE;
+  
+  let hasGravity = gravityX !== 0 || gravityY !== 0;
+  
+  // Minuten-Partikel
+  minuteParticles.forEach(particle => {
+    if (!particle.isActive && !particle.isConsumed) {
+      
+      if (hasGravity) {
+        // Gravitation anwenden mit individuellen Unterschieden
+        let forceX = gravityX * particle.gravityMultiplier;
+        let forceY = gravityY * particle.gravityMultiplier;
+        
+        Body.applyForce(particle.body, particle.body.position, {
+          x: forceX,
+          y: forceY
+        });
+      } else {
+        // NEU: Freie Bewegung ohne Gravitation - sanfte Drift
+        applyFreeDrift(particle);
+      }
+      
+      // NEU: Anti-Clumping - Abstoßung zwischen nahen Partikeln
+      applyParticleRepulsion(particle, minuteParticles);
+      applyParticleRepulsion(particle, hourParticles);
+    }
+  });
+  
+  // Stunden-Partikel
+  hourParticles.forEach(particle => {
+    if (!particle.isActive && !particle.isConsumed) {
+      
+      if (hasGravity) {
+        // Gravitation anwenden mit individuellen Unterschieden
+        let forceX = gravityX * particle.gravityMultiplier;
+        let forceY = gravityY * particle.gravityMultiplier;
+        
+        Body.applyForce(particle.body, particle.body.position, {
+          x: forceX,
+          y: forceY
+        });
+      } else {
+        // NEU: Freie Bewegung ohne Gravitation - sanfte Drift
+        applyFreeDrift(particle);
+      }
+      
+      // NEU: Anti-Clumping - Abstoßung zwischen nahen Partikeln
+      applyParticleRepulsion(particle, minuteParticles);
+      applyParticleRepulsion(particle, hourParticles);
+    }
+  });
+}
+
+// NEU: Sanfte Drift-Bewegung ohne Gravitation
+function applyFreeDrift(particle) {
+  // Langsame, zufällige Richtungsänderung für jeden Partikel
+  particle.driftAngle += random(-particle.angleChangeSpeed, particle.angleChangeSpeed);
+  
+  // Sanfte Drift-Bewegung in die aktuelle Richtung
+  let forceX = cos(particle.driftAngle) * particle.driftSpeed;
+  let forceY = sin(particle.driftAngle) * particle.driftSpeed;
+  
+  Body.applyForce(particle.body, particle.body.position, {
+    x: forceX,
+    y: forceY
+  });
+}
+
+// NEU: Abstoßung zwischen nahen Partikeln (Anti-Clumping)
+function applyParticleRepulsion(particle, otherParticles) {
+  otherParticles.forEach(other => {
+    if (particle === other || other.isActive || other.isConsumed) return;
+    
+    let dx = particle.body.position.x - other.body.position.x;
+    let dy = particle.body.position.y - other.body.position.y;
+    let distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance < REPULSION_DISTANCE && distance > 0) {
+      // Quadratisch abnehmende Abstoßung
+      let force = REPULSION_FORCE / (distance * distance);
+      let forceX = (dx / distance) * force;
+      let forceY = (dy / distance) * force;
+      
+      Body.applyForce(particle.body, particle.body.position, {
+        x: forceX,
+        y: forceY
+      });
+    }
+  });
+}
+
+// GEÄNDERT: Tastenstatus verwalten für dauerhafte Gravitation
+function keyPressed() {
+  if (keyCode === UP_ARROW) {
+    keys.up = true;
+  } else if (keyCode === DOWN_ARROW) {
+    keys.down = true;
+  } else if (keyCode === LEFT_ARROW) {
+    keys.left = true;
+  } else if (keyCode === RIGHT_ARROW) {
+    keys.right = true;
+  }
+}
+
+function keyReleased() {
+  if (keyCode === UP_ARROW) {
+    keys.up = false;
+  } else if (keyCode === DOWN_ARROW) {
+    keys.down = false;
+  } else if (keyCode === LEFT_ARROW) {
+    keys.left = false;
+  } else if (keyCode === RIGHT_ARROW) {
+    keys.right = false;
+  }
+}
+
+// Vereinfachte drawDigit Funktion - alle Punkte sind sichtbar und Teil der Zahl
+function drawDigit(digit) {
+  if (digit.targets.length === 0) return;
+  
+  // Berechne aktuelle Ziffer basierend auf digit.id
+  let currentDigit = getCurrentDigitValue(digit.id);
+  let pattern = PIXEL_PATTERNS[currentDigit];
+  
   noStroke();
-  circle(centerX, height / 2 - 10, 3);
-  circle(centerX, height / 2 + 10, 3);
+  
+  // ALLE 60 Punkte werden gezeichnet!
+  digit.targets.forEach((target, index) => {
+    let shouldBeActive = false;
+    
+    // Prüfe ob dieser Punkt zu einem aktiven Pixel gehört
+    if (target.row >= 0 && target.col >= 0 && 
+        target.row < 7 && target.col < 5) {
+      shouldBeActive = pattern[target.row][target.col] === 1;
+    }
+    
+    // Färbung: Alle Punkte werden gezeichnet
+    if (shouldBeActive && index < digit.bluePoints) {
+      // Teil der aktiven Zahl UND gefüllt - BLAU
+      if (target.layer === 0) {
+        fill(...COLORS.dynamic); // Vollblau für Basis-Pixel
+      } else {
+        fill(0, 80, 200); // Etwas heller für Verdickung
+      }
+    } else if (shouldBeActive) {
+      // Teil der aktiven Zahl, aber noch nicht gefüllt - GRAU
+      if (target.layer === 0) {
+        fill(120); // Hell für Basis-Pixel
+      } else {
+        fill(90); // Dunkler für Verdickung
+      }
+    } else {
+      // Nicht Teil der aktuellen Zahl - SEHR DUNKEL (aber sichtbar)
+      fill(20);
+    }
+    
+    // Größe basierend auf Layer
+    let size = target.layer === 0 ? RADIUS * 2.2 : RADIUS * 1.9;
+    ellipse(target.x, target.y, size);
+  });
+}
+
+// Neue Hilfsfunktion: Ermittle aktuelle Ziffer für digit.id
+function getCurrentDigitValue(digitId) {
+  switch(digitId) {
+    case 'h10': return Math.floor(h / 10);
+    case 'h1': return h % 10;
+    case 'm10': return Math.floor(m / 10);
+    case 'm1': return Math.floor(s / 10); // Zehner der Sekunden
+    default: return 0;
+  }
+}
+
+function drawFlyingParticles() {
+  noStroke();
+  fill(...COLORS.dynamic);
+  
+  // Zeichne nur nicht-verbrauchte Partikel
+  minuteParticles.forEach(particle => {
+    if (!particle.isConsumed) {
+      ellipse(particle.body.position.x, particle.body.position.y, RADIUS * 2);
+    }
+  });
+  
+  hourParticles.forEach(particle => {
+    if (!particle.isConsumed) {
+      ellipse(particle.body.position.x, particle.body.position.y, RADIUS * 2);
+    }
+  });
+}
+
+function drawColon() {
+  // Berechne die exakte Mitte zwischen den Stunden- und Minutenziffern
+  let hourEnd = START_X + 2 * DIGIT_WIDTH + DIGIT_SPACING;
+  let minuteStart = START_X + 2 * DIGIT_WIDTH + 2 * DIGIT_SPACING + COLON_WIDTH;
+  let colonX = hourEnd + (minuteStart - hourEnd) / 2;
+  
+  noStroke();
+  fill(COLORS.static);
+  ellipse(colonX, BASELINE_Y - 20, RADIUS * 2);
+  ellipse(colonX, BASELINE_Y + 20, RADIUS * 2);
+}
+
+function drawDebugInfo() {
+  fill(255);
+  textAlign(LEFT);
+  textSize(12);
+  textFont('monospace');
+  
+  let minuteActive = minuteParticles.filter(p => p.isActive).length;
+  let minuteConsumed = minuteParticles.filter(p => p.isConsumed).length;
+  let minuteFree = minuteParticles.filter(p => !p.isActive && !p.isConsumed).length;
+  
+  let hourActive = hourParticles.filter(p => p.isActive).length;
+  let hourConsumed = hourParticles.filter(p => p.isConsumed).length;
+  let hourFree = hourParticles.filter(p => !p.isActive && !p.isConsumed).length;
+  
+  text(`FIXED: ${nf(h,2)}:${nf(m,2)}:${nf(s,2)}`, 20, 30);
+  text(`Minuten-Partikel: Aktiv:${minuteActive} Verbraucht:${minuteConsumed} Frei:${minuteFree}`, 20, 50);
+  text(`Stunden-Partikel: Aktiv:${hourActive} Verbraucht:${hourConsumed} Frei:${hourFree}`, 20, 70);
+  text(`h10: ${digits[0].bluePoints}/${digits[0].targetBluePoints} (Stunden)`, 20, 90);
+  text(`h1:  ${digits[1].bluePoints}/${digits[1].targetBluePoints} (Stunden)`, 20, 110);
+  text(`m10: ${digits[2].bluePoints}/${digits[2].targetBluePoints} (Minuten)`, 20, 130);
+  text(`m1:  ${digits[3].bluePoints}/${digits[3].targetBluePoints} (Sekunden)`, 20, 150);
+  text(`Steuerung: ↑↓←→ (dauerhafte Gravitation)`, 20, 180);
+  
+  // Zeige aktive Tasten
+  let activeTasten = [];
+  if (keys.up) activeTasten.push('↑');
+  if (keys.down) activeTasten.push('↓');
+  if (keys.left) activeTasten.push('←');
+  if (keys.right) activeTasten.push('→');
+  text(`Aktive Tasten: ${activeTasten.join(' + ') || 'keine'}`, 20, 200);
 }
