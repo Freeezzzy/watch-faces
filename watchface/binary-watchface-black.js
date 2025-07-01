@@ -121,7 +121,7 @@ function createScene() {
 
   boxes.push(new PolygonFromSVG(
     world,
-    { x: 700, y:400 , fromFile: 'Frame-dick.svg', scale: 1, color:"#A5A2A2" },
+    { x: 700, y:400 , fromFile: 'Frame-dick.svg', scale: 1, color:"#727272" },
     { isStatic: false, friction: 0.3, restitution: 0.9 }
   ));
 
@@ -258,7 +258,7 @@ function tick() {
     if (blocks[0] && blocks[0].body) {
       Matter.World.remove(world, blocks[0].body);
     }
-    createCode(h, 0, "#A5A2A2");
+    createCode(h, 0, "#727272");
     actH = h;
   }
 
