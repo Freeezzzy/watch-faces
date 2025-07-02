@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Clockwork 9 - Blocks</title>
+
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+
+  <!-- matter.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+
+  <!-- Javascript Klassen -->
+  <script type="text/javascript" src="../../classes/Mouse.js"></script>
+  <script type="text/javascript" src="../../classes/BlockCore.js"></script>
+  <script type="text/javascript" src="../../classes/Block.js"></script>
+  <script type="text/javascript" src="../../classes/BlocksFromSVG.js"></script>
+  <script type="text/javascript" src="../../classes/Ball.js"></script>
+  <script type="text/javascript" src="../../classes/Magnet.js"></script>
+  <script type="text/javascript" src="../../classes/Parts.js"></script>
+  <script type="text/javascript" src="../../classes/Polygon.js"></script>
+  <script type="text/javascript" src="../../classes/PolygonFromPoints.js"></script>
+  <script type="text/javascript" src="../../classes/Stack.js"></script>
+  <script type="text/javascript" src="../../classes/PolygonFromSVG.js"></script>
+
+  <!-- Javascript Programm in separater Datei -->
+  <script type="text/javascript" src="../script/clockwork9.js" id="homework"></script>
+
+  <style>
+    body {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background-color: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    canvas,
+    #thecanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .watch-frame {
+      position: relative;
+      width: 960px;
+      height: 960px;
+      background: black;
+      border-radius: 90px;
+      box-shadow: 0 0 20px rgba(255,255,255,0.1);
+      overflow: hidden;
+    }
+
+    .digital-crown {
+      position: absolute;
+      right: -8px;
+      top: 50%;
+      transform: translateY(-30px);
+      width: 8px;
+      height: 40px;
+      background: #333;
+      border-radius: 4px 0 0 4px;
+    }
+
+    .side-button {
+      position: absolute;
+      right: -8px;
+      top: 50%;
+      transform: translateY(30px);
+      width: 8px;
+      height: 30px;
+      background: #333;
+      border-radius: 4px 0 0 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="watch-frame">
+    <div class="digital-crown"></div>
+    <div class="side-button"></div>
+    <div id="thecanvas"></div>
+  </div>
+</body>
+</html>

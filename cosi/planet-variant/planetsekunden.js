@@ -9,9 +9,16 @@ const WATCH = {
         INITIAL: 0.019,
         INCREMENT: 0.001,
         MAX: 0.25,
-        YELLOW_THRESHOLD: 0.15,    // Changed from 0.20 to 0.12
-        BREAKAWAY_THRESHOLD: 0.22  // Changed from 0.30 to 0.17
-    }
+        YELLOW_THRESHOLD: 0.15,    
+        BREAKAWAY_THRESHOLD: 0.22  
+    },
+    // Neue Murmel-Konstanten
+    MARBLE_SIZE: 12,        
+    TRACK_WIDTH: 20,        
+    TRACK_BORDER: 2,
+    // Neue Konstanten für Sekundenring
+    SECONDS_TRACK_WIDTH: 15,
+    SECONDS_MARBLE_SIZE: 8
 };
 
 // Matter.js Module aliases
@@ -24,11 +31,15 @@ let orbitSpeed = WATCH.ORBIT_SPEED.INITIAL;
 let centerX, centerY;
 let freedPlanets = [];
 let particles = [];
-let planetBodies = []; // Array of arrays - planetBodies[orbitIndex][planetIndex]
-let constraints = []; // Array of arrays - constraints[orbitIndex][planetIndex]
-let centerBody; // Static body at center for constraints
+let planetBodies = []; 
+let constraints = []; 
+let centerBody; 
 let currentSecond = 0;
-let currentStage = 1; // 1 = white, 2 = yellow, 3 = breakaway
+let currentStage = 1; 
+
+// Neue Variablen für Sekundenring
+let secondsPlanet = null;
+let secondsConstraint = null;
 
 // Time override variables
 let useCustomTime = false;
@@ -302,11 +313,12 @@ function createPlanetAtOrbit(orbitIndex, angle) {
     const x = centerX + cos(angle) * radius;
     const y = centerY + sin(angle) * radius;
     
-    const planet = Bodies.circle(x, y, 4, {
-        restitution: 1.0,   // Maximum bounce - no energy loss!
-        friction: 0.01,     // Almost no friction
-        frictionAir: 0.01,  // Very low air resistance
-        mass: 1,
+    // Größere Murmeln mit mehr Masse
+    const planet = Bodies.circle(x, y, WATCH.MARBLE_SIZE / 2, {
+        restitution: 0.9,   // Etwas weniger Bounce für realistischeres Verhalten
+        friction: 0.05,     // Etwas mehr Reibung für Rolleffekt
+        frictionAir: 0.01,  
+        mass: 2,            // Mehr Masse für Murmeln
         render: { fillStyle: '#ffffff' }
     });
     
@@ -316,7 +328,7 @@ function createPlanetAtOrbit(orbitIndex, angle) {
         bodyB: planet,
         length: radius,
         stiffness: 1.0,
-        damping: 0.02  // Much less damping for more bounce
+        damping: 0.02  
     });
     
     World.add(engine.world, [planet, constraint]);
@@ -357,9 +369,15 @@ function updateTime() {
     let m = time.m;
     let s = time.s;
     
+    let prevSecond = currentSecond;
     currentSecond = s;
 
-    // Keep 24-hour format - no conversion needed
+    // Update seconds planet position when second changes
+    if (prevSecond !== currentSecond) {
+        updateSecondsPlanet();
+    }
+
+    // 24-Stunden-Format beibehalten - keine Konvertierung
     // Reihenfolge der Digits: m2, m1, h2, h1 (außen nach innen)
     let digits = [
         m % 10,      
@@ -417,6 +435,36 @@ function updateTime() {
         // Update status display
         select('#timeStatus').html(`Status: Custom Time (${String(customHour).padStart(2, '0')}:${String(customMinute).padStart(2, '0')}:${String(customSecond).padStart(2, '0')})`);
     }
+}
+
+function updateSecondsPlanet() {
+    // Remove existing seconds planet if it exists
+    if (secondsPlanet) {
+        World.remove(engine.world, [secondsPlanet, secondsConstraint]);
+    }
+
+    // Create new seconds planet at current second position
+    let angle = TWO_PI * (currentSecond / 60) - HALF_PI;
+    let x = centerX + cos(angle) * WATCH.SECONDS_RADIUS;
+    let y = centerY + sin(angle) * WATCH.SECONDS_RADIUS;
+    
+    secondsPlanet = Bodies.circle(x, y, WATCH.SECONDS_MARBLE_SIZE / 2, {
+        restitution: 0.9,
+        friction: 0.05,
+        frictionAir: 0.01,
+        mass: 1.5,
+        render: { fillStyle: '#4A90E2' }
+    });
+    
+    secondsConstraint = Constraint.create({
+        bodyA: centerBody,
+        bodyB: secondsPlanet,
+        length: WATCH.SECONDS_RADIUS,
+        stiffness: 1.0,
+        damping: 0.02
+    });
+    
+    World.add(engine.world, [secondsPlanet, secondsConstraint]);
 }
 
 function updatePlanetPositions() {
@@ -527,8 +575,8 @@ function applyConstrainedForces() {
 }
 
 function applyPostCollisionSeparation(orbitIndex, planetIndex, currentPos) {
-    const collisionDistance = 15; // Distance considered "just collided"
-    const separationForce = 0.002; // Force to push apart after collision
+    const collisionDistance = WATCH.MARBLE_SIZE * 2; // Kollisionsdistanz basierend auf Murmelgröße
+    const separationForce = 0.002;
     const currentVel = planetBodies[orbitIndex][planetIndex].velocity;
     const currentSpeed = sqrt(currentVel.x * currentVel.x + currentVel.y * currentVel.y);
     
@@ -636,8 +684,8 @@ function calculateContainmentForce(pos) {
 }
 
 function applySpacingForces(orbitIndex, planetIndex, currentPos) {
-    const minDistance = 50; // Increased minimum distance
-    const spacingForce = 0.001; // Much stronger spacing force (10x stronger)
+    const minDistance = WATCH.MARBLE_SIZE * 3; // Abstand basierend auf Murmelgröße
+    const spacingForce = 0.001;
     
     // Check distance to other planets on the same orbit
     for (let k = 0; k < planetBodies[orbitIndex].length; k++) {
@@ -648,7 +696,6 @@ function applySpacingForces(orbitIndex, planetIndex, currentPos) {
             let distance = sqrt(dx * dx + dy * dy);
             
             if (distance < minDistance && distance > 0) {
-                // Apply much stronger repelling force
                 let forceStrength = spacingForce * (minDistance - distance) / minDistance;
                 let forceX = (dx / distance) * forceStrength;
                 let forceY = (dy / distance) * forceStrength;
@@ -663,19 +710,84 @@ function applySpacingForces(orbitIndex, planetIndex, currentPos) {
 }
 
 function drawOrbits() {
-    noFill();
-    stroke(100);
-    strokeWeight(1);
-    // Only draw the orbit circles
+    // Zeichne die Bahnen als ausgefüllte Rinnen mit Grautönen
     for (let i = 0; i < WATCH.ORBIT_RADII.length; i++) {
-        ellipse(0, 0, WATCH.ORBIT_RADII[i] * 2);
+        let radius = WATCH.ORBIT_RADII[i];
+        let outerRadius = radius + WATCH.TRACK_WIDTH/2;
+        let innerRadius = radius - WATCH.TRACK_WIDTH/2;
+        
+        // Bahnfläche (dunkler Grauton für die Rinne)
+        fill(60, 60, 60);
+        noStroke();
+        ellipse(0, 0, outerRadius * 2);
+        
+        // Inneren Bereich wieder ausschneiden (schwarzer Hintergrund)
+        fill(0);
+        ellipse(0, 0, innerRadius * 2);
+        
+        // Äußerer Rand der Bahn (heller für 3D-Effekt)
+        noFill();
+        stroke(120);
+        strokeWeight(2);
+        ellipse(0, 0, outerRadius * 2);
+        
+        // Innerer Rand der Bahn (dunkler für Tiefe)
+        stroke(40);
+        strokeWeight(2);
+        ellipse(0, 0, innerRadius * 2);
+        
+        // Mittellinie für bessere Orientierung (optional)
+        stroke(80);
+        strokeWeight(1);
+        ellipse(0, 0, radius * 2);
+    }
+    
+    // Zeichne Sekundenbahn
+    let secondsRadius = WATCH.SECONDS_RADIUS;
+    let outerRadius = secondsRadius + WATCH.SECONDS_TRACK_WIDTH/2;
+    let innerRadius = secondsRadius - WATCH.SECONDS_TRACK_WIDTH/2;
+    
+    // Bahnfläche für Sekunden (dunkler Grauton)
+    fill(60, 60, 60);
+    noStroke();
+    ellipse(0, 0, outerRadius * 2);
+    
+    // Inneren Bereich ausschneiden
+    fill(0);
+    ellipse(0, 0, innerRadius * 2);
+    
+    // Äußerer Rand
+    noFill();
+    stroke(120);
+    strokeWeight(2);
+    ellipse(0, 0, outerRadius * 2);
+    
+    // Innerer Rand
+    stroke(40);
+    strokeWeight(2);
+    ellipse(0, 0, innerRadius * 2);
+    
+    // Mittellinie
+    stroke(80);
+    strokeWeight(1);
+    ellipse(0, 0, secondsRadius * 2);
+    
+    // Sekundenmarkierungen (kleine Punkte alle 5 Sekunden)
+    for (let i = 0; i < 60; i += 5) {
+        let angle = TWO_PI * (i / 60) - HALF_PI;
+        let x = cos(angle) * secondsRadius;
+        let y = sin(angle) * secondsRadius;
+        
+        fill(100);
+        noStroke();
+        ellipse(x, y, 2);
     }
 }
 
 function drawPlanets() {
     noStroke();
     
-    // Draw planets with stage-appropriate colors
+    // Draw planets with stage-appropriate colors (changed to blue)
     for (let i = 0; i < 4; i++) {
         for (let j = 0; j < planetBodies[i].length; j++) {
             if (planetBodies[i][j]) {
@@ -683,48 +795,99 @@ function drawPlanets() {
                 let x = pos.x - centerX;
                 let y = pos.y - centerY;
                 
-                // Color based on current stage - keep yellow for all accelerated stages
+                // Murmel-Effekt mit Glanz
+                push();
+                translate(x, y);
+                
+                // Schatten der Murmel
+                fill(0, 0, 0, 50);
+                ellipse(2, 2, WATCH.MARBLE_SIZE);
+                
+                // Hauptkörper der Murmel
                 if (currentStage === 3) {
-                    fill(255, 255, 100); // Yellow when broken free (same as stage 2)
-                    
-                    // Extra sparkles in stage 3
+                    fill(100, 150, 255); // Helles Blau wenn losgelöst
+                } else if (currentStage === 2) {
+                    fill(74, 144, 226); // Blaue Farbe wenn schnell
+                } else {
+                    fill(255); // Weiß bei normaler Geschwindigkeit
+                }
+                ellipse(0, 0, WATCH.MARBLE_SIZE);
+                
+                // Glanzeffekt auf der Murmel
+                fill(255, 255, 255, 150);
+                ellipse(-WATCH.MARBLE_SIZE/4, -WATCH.MARBLE_SIZE/4, WATCH.MARBLE_SIZE/3);
+                
+                // Kleiner Glanzpunkt
+                fill(255, 255, 255, 200);
+                ellipse(-WATCH.MARBLE_SIZE/3, -WATCH.MARBLE_SIZE/3, WATCH.MARBLE_SIZE/6);
+                
+                pop();
+                
+                // Funken für schnelle Bewegung (geändert zu blau)
+                if (currentStage === 3) {
                     if (random() < 0.35) {
                         for (let k = 0; k < 4; k++) {
                             particles.push({
-                                x: x + random(-6, 6),
-                                y: y + random(-6, 6),
+                                x: x + random(-8, 8),
+                                y: y + random(-8, 8),
                                 vx: random(-5, 5),
                                 vy: random(-5, 5),
                                 alpha: 255,
                                 life: 20 + random(30),
-                                color: [255, 255, 100] // Yellow sparkles (not red)
+                                color: [100, 150, 255]
                             });
                         }
                     }
                 } else if (currentStage === 2) {
-                    fill(255, 255, 100); // Yellow when fast
-                    
-                    // Normal sparkles in stage 2
                     if (random() < 0.25) {
                         for (let k = 0; k < 3; k++) {
                             particles.push({
-                                x: x + random(-5, 5),
-                                y: y + random(-5, 5),
+                                x: x + random(-6, 6),
+                                y: y + random(-6, 6),
                                 vx: random(-4, 4),
                                 vy: random(-4, 4),
                                 alpha: 255,
                                 life: 25 + random(25),
-                                color: [255, 255, 100] // Yellow sparkles
+                                color: [74, 144, 226]
                             });
                         }
                     }
-                } else {
-                    fill(255); // White when normal speed
                 }
-                
-                ellipse(x, y, 8);
             }
         }
+    }
+    
+    // Draw seconds planet
+    if (secondsPlanet) {
+        let pos = secondsPlanet.position;
+        let x = pos.x - centerX;
+        let y = pos.y - centerY;
+        
+        push();
+        translate(x, y);
+        
+        // Schatten der Sekundenmurmel
+        fill(0, 0, 0, 50);
+        ellipse(2, 2, WATCH.SECONDS_MARBLE_SIZE);
+        
+        // Hauptkörper der Sekundenmurmel (blaue Farbe)
+        fill(74, 144, 226);
+        ellipse(0, 0, WATCH.SECONDS_MARBLE_SIZE);
+        
+        // Glanzeffekt
+        fill(255, 255, 255, 150);
+        ellipse(-WATCH.SECONDS_MARBLE_SIZE/4, -WATCH.SECONDS_MARBLE_SIZE/4, WATCH.SECONDS_MARBLE_SIZE/3);
+        
+        // Kleiner Glanzpunkt
+        fill(255, 255, 255, 200);
+        ellipse(-WATCH.SECONDS_MARBLE_SIZE/3, -WATCH.SECONDS_MARBLE_SIZE/3, WATCH.SECONDS_MARBLE_SIZE/6);
+        
+        // Pulsierender Effekt für aktuelle Sekunde
+        let pulse = 1 + sin(frameCount * 0.3) * 0.3;
+        fill(100, 180, 255, 80);
+        ellipse(0, 0, WATCH.SECONDS_MARBLE_SIZE * pulse);
+        
+        pop();
     }
 }
 
@@ -741,7 +904,7 @@ function updateFreedPlanets() {
             continue;
         }
         
-        fill(255, 255, 100, p.life);
+        fill(100, 150, 255, p.life); // Geändert zu Blau
         ellipse(pos.x - centerX, pos.y - centerY, 6);
         p.life -= 3;
 
@@ -762,8 +925,8 @@ function updateParticles() {
         p.life--;
         p.alpha = map(p.life, 0, 50, 0, 255);
 
-        // Use particle color if available, otherwise default to yellow
-        let color = p.color || [255, 255, 150];
+        // Use particle color if available, otherwise default to blue
+        let color = p.color || [74, 144, 226];
         fill(color[0], color[1], color[2], p.alpha);
         noStroke();
         ellipse(p.x, p.y, 3);
@@ -779,26 +942,8 @@ function updateParticles() {
 }
 
 function drawSeconds() {
-    // Move seconds ring outside
-    let radius = WATCH.SECONDS_RADIUS;
-    let cx = 0;
-    let cy = 0;
-
-    for (let i = 0; i < 60; i++) {
-        let angle = TWO_PI * (i / 60) - HALF_PI;
-        let x = cx + cos(angle) * radius;
-        let y = cy + sin(angle) * radius;
-
-        let pulse = 1.5 + sin(frameCount * 0.1 + i) * 1.5;
-
-        if (i === currentSecond) {
-            fill(255, 255, 100);
-            ellipse(x, y, 5 + pulse);
-        } else {
-            fill(120);
-            ellipse(x, y, 3 + pulse * 0.5);
-        }
-    }
+    // Diese Funktion ist jetzt leer, da die Sekunden als Kugel gezeichnet werden
+    // Die Sekundenmarkierungen werden in drawOrbits() gezeichnet
 }
 
 function drawWatchFrame() {
@@ -826,6 +971,8 @@ function cleanup() {
     freedPlanets = [];
     planetBodies = [];
     constraints = [];
+    secondsPlanet = null;
+    secondsConstraint = null;
 }
 
 function draw() {
@@ -846,7 +993,6 @@ function draw() {
         drawPlanets();
         updateFreedPlanets(); // Keep this for any existing freed planets
         updateParticles(); // Keep this but it won't create new particles
-        drawSeconds();
         
         pop();
         

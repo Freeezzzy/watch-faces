@@ -9,8 +9,8 @@ const WATCH = {
         INITIAL: 0.019,
         INCREMENT: 0.001,
         MAX: 0.25,
-        YELLOW_THRESHOLD: 0.15,    // Changed from 0.20 to 0.12
-        BREAKAWAY_THRESHOLD: 0.22  // Changed from 0.30 to 0.17
+        YELLOW_THRESHOLD: 0.15,
+        BREAKAWAY_THRESHOLD: 0.22
     }
 };
 
@@ -24,11 +24,11 @@ let orbitSpeed = WATCH.ORBIT_SPEED.INITIAL;
 let centerX, centerY;
 let freedPlanets = [];
 let particles = [];
-let planetBodies = []; // Array of arrays - planetBodies[orbitIndex][planetIndex]
-let constraints = []; // Array of arrays - constraints[orbitIndex][planetIndex]
-let centerBody; // Static body at center for constraints
+let planetBodies = [];
+let constraints = [];
+let centerBody;
 let currentSecond = 0;
-let currentStage = 1; // 1 = white, 2 = yellow, 3 = breakaway
+let currentStage = 1;
 
 // Time override variables
 let useCustomTime = false;
@@ -359,7 +359,7 @@ function updateTime() {
     
     currentSecond = s;
 
-    // Keep 24-hour format - no conversion needed
+    // 24-Stunden-Format beibehalten - keine Konvertierung
     // Reihenfolge der Digits: m2, m1, h2, h1 (außen nach innen)
     let digits = [
         m % 10,      
@@ -663,13 +663,7 @@ function applySpacingForces(orbitIndex, planetIndex, currentPos) {
 }
 
 function drawOrbits() {
-    noFill();
-    stroke(100);
-    strokeWeight(1);
-    // Only draw the orbit circles
-    for (let i = 0; i < WATCH.ORBIT_RADII.length; i++) {
-        ellipse(0, 0, WATCH.ORBIT_RADII[i] * 2);
-    }
+    // Ringe sind jetzt unsichtbar - komplette Funktion leer
 }
 
 function drawPlanets() {
@@ -842,10 +836,10 @@ function draw() {
         push();
         translate(centerX, centerY);
         
-        drawOrbits();
+        // drawOrbits(); // Ringe auskommentiert
         drawPlanets();
-        updateFreedPlanets(); // Keep this for any existing freed planets
-        updateParticles(); // Keep this but it won't create new particles
+        updateFreedPlanets();
+        updateParticles();
         drawSeconds();
         
         pop();

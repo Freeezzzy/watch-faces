@@ -9,9 +9,27 @@ const WATCH = {
         INITIAL: 0.019,
         INCREMENT: 0.001,
         MAX: 0.25,
-        YELLOW_THRESHOLD: 0.15,    // Changed from 0.20 to 0.12
-        BREAKAWAY_THRESHOLD: 0.22  // Changed from 0.30 to 0.17
+        BLUE_THRESHOLD: 0.15,
+        BREAKAWAY_THRESHOLD: 0.22
     }
+};
+
+// Neue Hintergrund-Konstanten für Sterne
+const BACKGROUND = {
+    STAR_COUNT: 80,
+    TWINKLE_SPEED: 0.03,
+    STAR_MIN_SIZE: 1,
+    STAR_MAX_SIZE: 3,
+    SHOOTING_STAR_CHANCE: 0.003,
+    SHOOTING_STAR_DURATION: 60
+};
+
+// Definiere die exakte 4-Farben-Palette
+const COLORS = {
+    BLACK: 0,
+    WHITE: 255,
+    GRAY: 100,  // Der EINE Grauton
+    BLUE: [100, 150, 255]  // Das EINE Blau (schönes helles Blau)
 };
 
 // Matter.js Module aliases
@@ -28,7 +46,16 @@ let planetBodies = []; // Array of arrays - planetBodies[orbitIndex][planetIndex
 let constraints = []; // Array of arrays - constraints[orbitIndex][planetIndex]
 let centerBody; // Static body at center for constraints
 let currentSecond = 0;
-let currentStage = 1; // 1 = white, 2 = yellow, 3 = breakaway
+let currentStage = 1; // 1 = white, 2 = blue, 3 = breakaway
+
+// Seconds planet tracking
+let secondsPlanet = null;
+let secondsConstraint = null;
+let prevSecond = -1;
+
+// Sterne-Array
+let stars = [];
+let shootingStars = [];
 
 // Time override variables
 let useCustomTime = false;
@@ -51,6 +78,7 @@ function setup() {
         centerX = width / 2;
         centerY = height / 2;
 
+        initializeStars();
         createTimeControls();
         initializePhysics();
         updateTime();
@@ -60,8 +88,152 @@ function setup() {
     }
 }
 
+function initializeStars() {
+    stars = [];
+    for (let i = 0; i < BACKGROUND.STAR_COUNT; i++) {
+        stars.push({
+            x: random(0, width),
+            y: random(0, height),
+            size: random(BACKGROUND.STAR_MIN_SIZE, BACKGROUND.STAR_MAX_SIZE),
+            baseBrightness: random(0.4, 0.9),
+            twinkleOffset: random(0, TWO_PI),
+            twinkleSpeed: random(0.01, 0.03),
+            twinkleIntensity: random(0.2, 0.4)
+        });
+    }
+    shootingStars = [];
+}
+
+function drawBackground() {
+    drawTwinklingStars();
+    drawShootingStars();
+    drawCenterRings();
+}
+
+function drawTwinklingStars() {
+    noStroke();
+    
+    for (let i = 0; i < stars.length; i++) {
+        let star = stars[i];
+        
+        let twinkle1 = sin(frameCount * star.twinkleSpeed + star.twinkleOffset);
+        let twinkle2 = cos(frameCount * star.twinkleSpeed * 0.7 + star.twinkleOffset * 1.3);
+        let combinedTwinkle = (twinkle1 + twinkle2 * 0.5) / 1.5;
+        
+        let currentBrightness = star.baseBrightness + combinedTwinkle * star.twinkleIntensity;
+        currentBrightness = constrain(currentBrightness, 0.2, 1.0);
+        
+        let alpha = map(currentBrightness, 0.2, 1.0, 80, 255);
+        fill(COLORS.GRAY, alpha);
+        
+        let currentSize = star.size * (0.8 + currentBrightness * 0.2);
+        
+        ellipse(star.x, star.y, currentSize);
+        
+        if (currentBrightness > 0.75) {
+            fill(COLORS.GRAY, alpha * 0.4);
+            ellipse(star.x, star.y, currentSize * 1.8);
+        }
+    }
+}
+
+function createShootingStar() {
+    let startX, startY, vx, vy;
+    
+    let edge = int(random(4));
+    switch(edge) {
+        case 0:
+            startX = random(width);
+            startY = -10;
+            vx = random(-3, 3);
+            vy = random(2, 6);
+            break;
+        case 1:
+            startX = width + 10;
+            startY = random(height);
+            vx = random(-6, -2);
+            vy = random(-3, 3);
+            break;
+        case 2:
+            startX = random(width);
+            startY = height + 10;
+            vx = random(-3, 3);
+            vy = random(-6, -2);
+            break;
+        case 3:
+            startX = -10;
+            startY = random(height);
+            vx = random(2, 6);
+            vy = random(-3, 3);
+            break;
+    }
+    
+    shootingStars.push({
+        x: startX,
+        y: startY,
+        vx: vx,
+        vy: vy,
+        life: BACKGROUND.SHOOTING_STAR_DURATION
+    });
+}
+
+function drawShootingStars() {
+    if (currentStage === 1 && random() < BACKGROUND.SHOOTING_STAR_CHANCE) {
+        createShootingStar();
+    }
+    
+    for (let i = shootingStars.length - 1; i >= 0; i--) {
+        let meteor = shootingStars[i];
+        
+        meteor.x += meteor.vx;
+        meteor.y += meteor.vy;
+        meteor.life--;
+        
+        let alpha = map(meteor.life, 0, BACKGROUND.SHOOTING_STAR_DURATION, 0, 200);
+        alpha = constrain(alpha, 0, 200);
+        
+        stroke(180, alpha);
+        strokeWeight(2);
+        
+        line(meteor.x, meteor.y, 
+             meteor.x - meteor.vx * 8, meteor.y - meteor.vy * 8);
+        
+        for (let j = 1; j <= 3; j++) {
+            let trailAlpha = alpha * (1 - j * 0.3);
+            stroke(180, trailAlpha);
+            strokeWeight(2 - j * 0.5);
+            line(meteor.x - meteor.vx * j * 3, meteor.y - meteor.vy * j * 3,
+                 meteor.x - meteor.vx * (j + 3) * 3, meteor.y - meteor.vy * (j + 3) * 3);
+        }
+        
+        fill(200, alpha);
+        noStroke();
+        ellipse(meteor.x, meteor.y, 3);
+        
+        if (meteor.life <= 0 || meteor.x < -50 || meteor.x > width + 50 || 
+            meteor.y < -50 || meteor.y > height + 50) {
+            shootingStars.splice(i, 1);
+        }
+    }
+}
+
+function drawCenterRings() {
+    push();
+    translate(centerX, centerY);
+    noFill();
+    
+    for (let i = 1; i <= 3; i++) {
+        let radius = i * 70;
+        let alpha = map(i, 1, 3, 30, 10);
+        
+        stroke(COLORS.GRAY, alpha);
+        strokeWeight(0.5);
+        ellipse(0, 0, radius * 2);
+    }
+    pop();
+}
+
 function createTimeControls() {
-    // Container für die Controls
     const controlsDiv = createDiv('');
     controlsDiv.style('position', 'fixed');
     controlsDiv.style('top', '10px');
@@ -73,14 +245,12 @@ function createTimeControls() {
     controlsDiv.style('font-family', 'Arial, sans-serif');
     controlsDiv.style('z-index', '1000');
 
-    // Titel
     const title = createP('Manual Time Control');
     title.style('margin', '0 0 10px 0');
     title.style('font-weight', 'bold');
     title.style('color', '#ffffff');
     title.parent(controlsDiv);
 
-    // Stunden Input
     const hourLabel = createP('Hour (0-23):');
     hourLabel.style('margin', '5px 0 2px 0');
     hourLabel.style('font-size', '12px');
@@ -93,7 +263,6 @@ function createTimeControls() {
     hourInput.style('margin-bottom', '5px');
     hourInput.parent(controlsDiv);
 
-    // Minuten Input
     const minuteLabel = createP('Minute (0-59):');
     minuteLabel.style('margin', '5px 0 2px 0');
     minuteLabel.style('font-size', '12px');
@@ -106,7 +275,6 @@ function createTimeControls() {
     minuteInput.style('margin-bottom', '5px');
     minuteInput.parent(controlsDiv);
 
-    // Sekunden Input
     const secondLabel = createP('Second (0-59):');
     secondLabel.style('margin', '5px 0 2px 0');
     secondLabel.style('font-size', '12px');
@@ -119,7 +287,6 @@ function createTimeControls() {
     secondInput.style('margin-bottom', '10px');
     secondInput.parent(controlsDiv);
 
-    // Set Time Button
     setTimeButton = createButton('Set Custom Time');
     setTimeButton.style('background', '#4CAF50');
     setTimeButton.style('color', 'white');
@@ -132,7 +299,6 @@ function createTimeControls() {
     setTimeButton.mousePressed(setCustomTime);
     setTimeButton.parent(controlsDiv);
 
-    // Reset Button
     resetTimeButton = createButton('Reset to Real Time');
     resetTimeButton.style('background', '#f44336');
     resetTimeButton.style('color', 'white');
@@ -143,7 +309,6 @@ function createTimeControls() {
     resetTimeButton.mousePressed(resetToRealTime);
     resetTimeButton.parent(controlsDiv);
 
-    // Status Display
     const statusP = createP('Status: Real Time');
     statusP.id('timeStatus');
     statusP.style('margin', '10px 0 0 0');
@@ -157,17 +322,14 @@ function setCustomTime() {
     const m = parseInt(minuteInput.value());
     const s = parseInt(secondInput.value());
 
-    // Validate inputs
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59 && s >= 0 && s <= 59) {
         customHour = h;
         customMinute = m;
         customSecond = s;
         useCustomTime = true;
         
-        // Update display immediately
         updateTime();
         
-        // Update status
         select('#timeStatus').html(`Status: Custom Time (${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')})`);
         
         console.log(`Custom time set to: ${h}:${m}:${s}`);
@@ -180,7 +342,6 @@ function resetToRealTime() {
     useCustomTime = false;
     updateTime();
     
-    // Update status
     select('#timeStatus').html('Status: Real Time');
     
     console.log('Reset to real time');
@@ -203,7 +364,6 @@ function getCurrentTime() {
 }
 
 function initializePhysics() {
-    // Clean up existing engine if it exists
     if (engine) {
         World.clear(engine.world);
         Engine.clear(engine);
@@ -213,14 +373,12 @@ function initializePhysics() {
         gravity: { x: 0, y: 0 }
     });
     
-    // Create center anchor point
     centerBody = Bodies.circle(centerX, centerY, 1, { 
         isStatic: true,
         render: { visible: false }
     });
     World.add(engine.world, centerBody);
 
-    // Initialize orbit arrays
     for (let i = 0; i < 4; i++) {
         orbits.push({ 
             count: 0, 
@@ -231,46 +389,41 @@ function initializePhysics() {
         constraints.push([]);
     }
 
-    // Create boundary walls
     const walls = createBoundaryWalls();
     World.add(engine.world, walls);
+    
+    createSecondsPlanet(getCurrentTime().s);
 }
 
 function createBoundaryWalls() {
-    const wallThickness = 20; // Increased from 10 for stronger containment
+    const wallThickness = 20;
     const cornerRadius = 90;
     
-    // Create stronger walls that contain planets better
     return [
-        // Top wall
         Bodies.rectangle(width/2, wallThickness/2, width - cornerRadius, wallThickness, { 
             isStatic: true,
             render: { fillStyle: 'transparent' },
-            restitution: 0.8 // Bouncy walls
+            restitution: 0.8
         }),
         
-        // Bottom wall  
         Bodies.rectangle(width/2, height - wallThickness/2, width - cornerRadius, wallThickness, { 
             isStatic: true,
             render: { fillStyle: 'transparent' },
             restitution: 0.8
         }),
         
-        // Left wall
         Bodies.rectangle(wallThickness/2, height/2, wallThickness, height - cornerRadius, { 
             isStatic: true,
             render: { fillStyle: 'transparent' },
             restitution: 0.8
         }),
         
-        // Right wall (accounting for Digital Crown space)
         Bodies.rectangle(width - wallThickness/2 - 8, height/2, wallThickness, height - cornerRadius, { 
             isStatic: true,
             render: { fillStyle: 'transparent' },
             restitution: 0.8
         }),
         
-        // Corner pieces for rounded corners - made larger
         Bodies.circle(cornerRadius/2, cornerRadius/2, cornerRadius/3, { 
             isStatic: true,
             render: { fillStyle: 'transparent' },
@@ -303,20 +456,19 @@ function createPlanetAtOrbit(orbitIndex, angle) {
     const y = centerY + sin(angle) * radius;
     
     const planet = Bodies.circle(x, y, 4, {
-        restitution: 1.0,   // Maximum bounce - no energy loss!
-        friction: 0.01,     // Almost no friction
-        frictionAir: 0.01,  // Very low air resistance
+        restitution: 1.0,
+        friction: 0.01,
+        frictionAir: 0.01,
         mass: 1,
         render: { fillStyle: '#ffffff' }
     });
     
-    // Create constraint to keep planet at exact distance from center
     const constraint = Constraint.create({
         bodyA: centerBody,
         bodyB: planet,
         length: radius,
         stiffness: 1.0,
-        damping: 0.02  // Much less damping for more bounce
+        damping: 0.02
     });
     
     World.add(engine.world, [planet, constraint]);
@@ -325,16 +477,14 @@ function createPlanetAtOrbit(orbitIndex, angle) {
 }
 
 function handleInput() {
-    if (keyIsDown(87)) { // W key
+    if (keyIsDown(87)) {
         orbitSpeed += WATCH.ORBIT_SPEED.INCREMENT;
-        // Cap the maximum speed
         if (orbitSpeed > WATCH.ORBIT_SPEED.MAX) {
             orbitSpeed = WATCH.ORBIT_SPEED.MAX;
         }
     }
-    if (keyIsDown(83)) { // S key
+    if (keyIsDown(83)) {
         orbitSpeed -= WATCH.ORBIT_SPEED.INCREMENT;
-        // Cap the maximum negative speed
         if (orbitSpeed < -WATCH.ORBIT_SPEED.MAX) {
             orbitSpeed = -WATCH.ORBIT_SPEED.MAX;
         }
@@ -359,8 +509,13 @@ function updateTime() {
     
     currentSecond = s;
 
-    // Keep 24-hour format - no conversion needed
-    // Reihenfolge der Digits: m2, m1, h2, h1 (außen nach innen)
+    if (s !== prevSecond) {
+        if (!secondsPlanet) {
+            createSecondsPlanet(s);
+        }
+        prevSecond = s;
+    }
+
     let digits = [
         m % 10,      
         int(m / 10), 
@@ -373,7 +528,6 @@ function updateTime() {
         let prevCount = orbits[i].count;
         orbits[i].count = count;
 
-        // Add new planets if count increased
         if (count > prevCount) {
             for (let j = prevCount; j < count; j++) {
                 let angle = (TWO_PI / max(count, 1)) * j + orbits[i].offset;
@@ -381,12 +535,9 @@ function updateTime() {
                 planetBodies[i].push(planetData.planet);
                 constraints[i].push(planetData.constraint);
             }
-        }
-        // Remove planets if count decreased
-        else if (count < prevCount) {
+        } else if (count < prevCount) {
             for (let j = prevCount - 1; j >= count; j--) {
                 if (planetBodies[i][j]) {
-                    // Break constraint and let planet fly free
                     World.remove(engine.world, constraints[i][j]);
                     freedPlanets.push({
                         body: planetBodies[i][j],
@@ -399,7 +550,6 @@ function updateTime() {
         }
     }
 
-    // Update custom time if using it (simulate time passing)
     if (useCustomTime) {
         customSecond++;
         if (customSecond >= 60) {
@@ -414,60 +564,101 @@ function updateTime() {
             }
         }
         
-        // Update status display
         select('#timeStatus').html(`Status: Custom Time (${String(customHour).padStart(2, '0')}:${String(customMinute).padStart(2, '0')}:${String(customSecond).padStart(2, '0')})`);
     }
 }
 
+function createSecondsPlanet(second) {
+    let angle = TWO_PI * (second / 60) - HALF_PI;
+    let x = centerX + cos(angle) * WATCH.SECONDS_RADIUS;
+    let y = centerY + sin(angle) * WATCH.SECONDS_RADIUS;
+
+    secondsPlanet = Bodies.circle(x, y, 6, {
+        restitution: 1.0,
+        friction: 0.01,
+        frictionAir: 0.01,
+        mass: 1,
+        render: { fillStyle: '#6496ff' }
+    });
+
+    secondsConstraint = Constraint.create({
+        bodyA: centerBody,
+        bodyB: secondsPlanet,
+        length: WATCH.SECONDS_RADIUS,
+        stiffness: 1.0,
+        damping: 0.02
+    });
+
+    World.add(engine.world, [secondsPlanet, secondsConstraint]);
+}
+
 function updatePlanetPositions() {
-    // Determine current stage
     if (abs(orbitSpeed) > WATCH.ORBIT_SPEED.BREAKAWAY_THRESHOLD) {
         if (currentStage !== 3) {
-            // Transition to stage 3: Break all constraints
             breakAllConstraints();
             currentStage = 3;
         }
-        // In stage 3, apply forces to free-floating planets
         applyBreakawayForces();
-    } else if (abs(orbitSpeed) > WATCH.ORBIT_SPEED.YELLOW_THRESHOLD) {
+    } else if (abs(orbitSpeed) > WATCH.ORBIT_SPEED.BLUE_THRESHOLD) {
         if (currentStage === 3) {
-            // Transition from stage 3 back to stage 2: Recreate constraints
             recreateConstraints();
             currentStage = 2;
         } else {
             currentStage = 2;
         }
-        // Normal stage 2 behavior
         applyConstrainedForces();
     } else {
         if (currentStage === 3) {
-            // Transition from stage 3 back to stage 1: Recreate constraints
             recreateConstraints();
             currentStage = 1;
         } else {
             currentStage = 1;
         }
-        // Normal stage 1 behavior
         applyConstrainedForces();
+    }
+
+    updateSecondsMovement();
+}
+
+function updateSecondsMovement() {
+    if (secondsPlanet && secondsConstraint) {
+        let currentPos = secondsPlanet.position;
+        let radiusX = currentPos.x - centerX;
+        let radiusY = currentPos.y - centerY;
+        let radiusLength = sqrt(radiusX * radiusX + radiusY * radiusY);
+        
+        // Immer in die gleiche Richtung rotieren (im Uhrzeigersinn)
+        let tangentX = -radiusY / radiusLength;
+        let tangentY = radiusX / radiusLength;
+        
+        // Konstante, sanfte Rotationsgeschwindigkeit - unabhängig vom orbitSpeed
+        let forceMultiplier = 0.0003; // Konstante, nicht beeinflusst von orbitSpeed
+        
+        Body.applyForce(secondsPlanet, currentPos, {
+            x: tangentX * forceMultiplier,
+            y: tangentY * forceMultiplier
+        });
     }
 }
 
 function breakAllConstraints() {
+    // Nur die inneren 4 Ringe brechen, NICHT den Sekundenplanet
     for (let i = 0; i < 4; i++) {
         for (let j = 0; j < constraints[i].length; j++) {
             if (constraints[i][j]) {
                 World.remove(engine.world, constraints[i][j]);
-                constraints[i][j] = null; // Mark as broken
+                constraints[i][j] = null;
             }
         }
     }
+    // Sekundenplanet-Constraint BLEIBT bestehen
 }
 
 function recreateConstraints() {
+    // Nur die inneren 4 Ringe wiederherstellen
     for (let i = 0; i < 4; i++) {
         for (let j = 0; j < planetBodies[i].length; j++) {
             if (planetBodies[i][j] && !constraints[i][j]) {
-                // Recreate constraint
                 const radius = WATCH.ORBIT_RADII[i];
                 const constraint = Constraint.create({
                     bodyA: centerBody,
@@ -481,6 +672,7 @@ function recreateConstraints() {
             }
         }
     }
+    // Sekundenplanet-Constraint wird nicht wiederhergestellt, da er nie gebrochen wurde
 }
 
 function applyConstrainedForces() {
@@ -491,27 +683,21 @@ function applyConstrainedForces() {
             if (planetBodies[i][j] && constraints[i][j]) {
                 let currentPos = planetBodies[i][j].position;
                 
-                // Calculate the tangential direction (perpendicular to radius)
                 let radiusX = currentPos.x - centerX;
                 let radiusY = currentPos.y - centerY;
                 let radiusLength = sqrt(radiusX * radiusX + radiusY * radiusY);
                 
-                // Tangent vector (90 degrees to radius)
                 let tangentX = -radiusY / radiusLength;
                 let tangentY = radiusX / radiusLength;
                 
-                // In yellow stage, add slight random variation to create collisions
                 let baseForce = orbitSpeed * 0.003;
                 let randomVariation = 1.0;
                 
                 if (currentStage === 2) {
-                    // Each planet gets a slightly different speed variation
                     randomVariation = 0.7 + (j * 0.15) + sin(frameCount * 0.08 + j) * 0.3;
                     
-                    // Add post-collision separation forces
                     applyPostCollisionSeparation(i, j, currentPos);
                 } else {
-                    // When in normal stage, add spacing forces to prevent clustering
                     applySpacingForces(i, j, currentPos);
                 }
                 
@@ -527,12 +713,11 @@ function applyConstrainedForces() {
 }
 
 function applyPostCollisionSeparation(orbitIndex, planetIndex, currentPos) {
-    const collisionDistance = 15; // Distance considered "just collided"
-    const separationForce = 0.002; // Force to push apart after collision
+    const collisionDistance = 15;
+    const separationForce = 0.002;
     const currentVel = planetBodies[orbitIndex][planetIndex].velocity;
     const currentSpeed = sqrt(currentVel.x * currentVel.x + currentVel.y * currentVel.y);
     
-    // Check distance to other planets on the same orbit
     for (let k = 0; k < planetBodies[orbitIndex].length; k++) {
         if (k !== planetIndex && planetBodies[orbitIndex][k]) {
             let otherPos = planetBodies[orbitIndex][k].position;
@@ -542,24 +727,20 @@ function applyPostCollisionSeparation(orbitIndex, planetIndex, currentPos) {
             let distance = sqrt(dx * dx + dy * dy);
             
             if (distance < collisionDistance && distance > 0) {
-                // Check if planets are moving toward each other (indicates recent collision)
                 let relativeVelX = currentVel.x - otherVel.x;
                 let relativeVelY = currentVel.y - otherVel.y;
                 let approachingSpeed = (relativeVelX * dx + relativeVelY * dy) / distance;
                 
-                // If they're moving apart slowly or toward each other, apply separation
-                if (approachingSpeed > -2) { // Adjust this threshold
+                if (approachingSpeed > -2) {
                     let separationStrength = separationForce * (collisionDistance - distance) / collisionDistance;
                     let forceX = (dx / distance) * separationStrength;
                     let forceY = (dy / distance) * separationStrength;
                     
-                    // Apply stronger separation force
                     Body.applyForce(planetBodies[orbitIndex][planetIndex], currentPos, {
-                        x: forceX * 2, // Extra strong separation
+                        x: forceX * 2,
                         y: forceY * 2
                     });
                     
-                    // Also apply a small tangential "spin" force to help them separate
                     let tangentForceX = -forceY * 0.5;
                     let tangentForceY = forceX * 0.5;
                     
@@ -574,33 +755,27 @@ function applyPostCollisionSeparation(orbitIndex, planetIndex, currentPos) {
 }
 
 function applyBreakawayForces() {
-    // Apply forces to all planets based on orbitSpeed
     for (let i = 0; i < 4; i++) {
         for (let j = 0; j < planetBodies[i].length; j++) {
             if (planetBodies[i][j]) {
                 let currentPos = planetBodies[i][j].position;
                 let currentVel = planetBodies[i][j].velocity;
                 
-                // Check if planet is getting too close to edges and apply containment force
                 let containmentForce = calculateContainmentForce(currentPos);
                 
-                // Apply acceleration force in current direction of movement
                 let speed = sqrt(currentVel.x * currentVel.x + currentVel.y * currentVel.y);
                 let accelerationForce = { x: 0, y: 0 };
                 
                 if (speed > 0.1) {
-                    // Accelerate in current direction but reduce force near walls
-                    let forceMultiplier = orbitSpeed * 0.003; // Reduced force
+                    let forceMultiplier = orbitSpeed * 0.003;
                     accelerationForce.x = (currentVel.x / speed) * forceMultiplier;
                     accelerationForce.y = (currentVel.y / speed) * forceMultiplier;
                 } else {
-                    // If not moving, apply random force toward center
                     let angle = atan2(centerY - currentPos.y, centerX - currentPos.x) + random(-PI/4, PI/4);
                     accelerationForce.x = cos(angle) * orbitSpeed * 0.002;
                     accelerationForce.y = sin(angle) * orbitSpeed * 0.002;
                 }
                 
-                // Combine forces with containment having priority
                 Body.applyForce(planetBodies[i][j], currentPos, {
                     x: accelerationForce.x + containmentForce.x,
                     y: accelerationForce.y + containmentForce.y
@@ -611,23 +786,19 @@ function applyBreakawayForces() {
 }
 
 function calculateContainmentForce(pos) {
-    const margin = 50; // Distance from edge where containment force starts
-    const maxForce = 0.002; // Maximum containment force
+    const margin = 50;
+    const maxForce = 0.002;
     let forceX = 0, forceY = 0;
     
-    // Left edge
     if (pos.x < margin) {
         forceX += (margin - pos.x) / margin * maxForce;
     }
-    // Right edge
     if (pos.x > width - margin) {
         forceX -= (pos.x - (width - margin)) / margin * maxForce;
     }
-    // Top edge
     if (pos.y < margin) {
         forceY += (margin - pos.y) / margin * maxForce;
     }
-    // Bottom edge
     if (pos.y > height - margin) {
         forceY -= (pos.y - (height - margin)) / margin * maxForce;
     }
@@ -636,10 +807,9 @@ function calculateContainmentForce(pos) {
 }
 
 function applySpacingForces(orbitIndex, planetIndex, currentPos) {
-    const minDistance = 50; // Increased minimum distance
-    const spacingForce = 0.001; // Much stronger spacing force (10x stronger)
+    const minDistance = 50;
+    const spacingForce = 0.001;
     
-    // Check distance to other planets on the same orbit
     for (let k = 0; k < planetBodies[orbitIndex].length; k++) {
         if (k !== planetIndex && planetBodies[orbitIndex][k]) {
             let otherPos = planetBodies[orbitIndex][k].position;
@@ -648,7 +818,6 @@ function applySpacingForces(orbitIndex, planetIndex, currentPos) {
             let distance = sqrt(dx * dx + dy * dy);
             
             if (distance < minDistance && distance > 0) {
-                // Apply much stronger repelling force
                 let forceStrength = spacingForce * (minDistance - distance) / minDistance;
                 let forceX = (dx / distance) * forceStrength;
                 let forceY = (dy / distance) * forceStrength;
@@ -664,30 +833,28 @@ function applySpacingForces(orbitIndex, planetIndex, currentPos) {
 
 function drawOrbits() {
     noFill();
-    stroke(100);
+    stroke(COLORS.GRAY);
     strokeWeight(1);
-    // Only draw the orbit circles
     for (let i = 0; i < WATCH.ORBIT_RADII.length; i++) {
         ellipse(0, 0, WATCH.ORBIT_RADII[i] * 2);
     }
+    ellipse(0, 0, WATCH.SECONDS_RADIUS * 2);
 }
 
 function drawPlanets() {
     noStroke();
     
-    // Draw planets with stage-appropriate colors
     for (let i = 0; i < 4; i++) {
         for (let j = 0; j < planetBodies[i].length; j++) {
             if (planetBodies[i][j]) {
                 let pos = planetBodies[i][j].position;
                 let x = pos.x - centerX;
                 let y = pos.y - centerY;
+                let velocity = planetBodies[i][j].velocity;
                 
-                // Color based on current stage - keep yellow for all accelerated stages
                 if (currentStage === 3) {
-                    fill(255, 255, 100); // Yellow when broken free (same as stage 2)
+                    fill(COLORS.BLUE[0], COLORS.BLUE[1], COLORS.BLUE[2]);
                     
-                    // Extra sparkles in stage 3
                     if (random() < 0.35) {
                         for (let k = 0; k < 4; k++) {
                             particles.push({
@@ -697,34 +864,55 @@ function drawPlanets() {
                                 vy: random(-5, 5),
                                 alpha: 255,
                                 life: 20 + random(30),
-                                color: [255, 255, 100] // Yellow sparkles (not red)
+                                size: random(2, 4),
+                                color: COLORS.BLUE
                             });
                         }
                     }
                 } else if (currentStage === 2) {
-                    fill(255, 255, 100); // Yellow when fast
+                    fill(COLORS.BLUE[0], COLORS.BLUE[1], COLORS.BLUE[2]);
                     
-                    // Normal sparkles in stage 2
-                    if (random() < 0.25) {
-                        for (let k = 0; k < 3; k++) {
+                    if (random() < 0.3) {
+                        let speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+                        let sparkCount = int(random(2, 6));
+                        
+                        for (let k = 0; k < sparkCount; k++) {
+                            let sparkDirection = atan2(velocity.y, velocity.x) + random(-PI/3, PI/3);
+                            let sparkSpeed = random(3, 8) + speed * 0.5;
+                            
                             particles.push({
-                                x: x + random(-5, 5),
-                                y: y + random(-5, 5),
-                                vx: random(-4, 4),
-                                vy: random(-4, 4),
-                                alpha: 255,
-                                life: 25 + random(25),
-                                color: [255, 255, 100] // Yellow sparkles
+                                x: x + random(-4, 4),
+                                y: y + random(-4, 4),
+                                vx: cos(sparkDirection) * sparkSpeed + random(-2, 2),
+                                vy: sin(sparkDirection) * sparkSpeed + random(-2, 2),
+                                alpha: random(200, 255),
+                                life: random(15, 40),
+                                size: random(1, 5),
+                                sparkIntensity: random(0.7, 1.0),
+                                color: COLORS.BLUE
                             });
                         }
                     }
                 } else {
-                    fill(255); // White when normal speed
+                    fill(COLORS.WHITE);
                 }
                 
                 ellipse(x, y, 8);
             }
         }
+    }
+
+    if (secondsPlanet) {
+        let pos = secondsPlanet.position;
+        let x = pos.x - centerX;
+        let y = pos.y - centerY;
+        
+        fill(COLORS.BLUE[0], COLORS.BLUE[1], COLORS.BLUE[2]);
+        ellipse(x, y, 12);
+        
+        let pulse = 1 + sin(frameCount * 0.1) * 0.3;
+        fill(COLORS.BLUE[0], COLORS.BLUE[1], COLORS.BLUE[2], 100);
+        ellipse(x, y, 12 * pulse);
     }
 }
 
@@ -733,7 +921,6 @@ function updateFreedPlanets() {
         let p = freedPlanets[i];
         const pos = p.body.position;
         
-        // Remove planets that go too far off screen
         if (pos.x < -width || pos.x > width * 2 || 
             pos.y < -height || pos.y > height * 2) {
             World.remove(engine.world, p.body);
@@ -741,7 +928,7 @@ function updateFreedPlanets() {
             continue;
         }
         
-        fill(255, 255, 100, p.life);
+        fill(COLORS.BLUE[0], COLORS.BLUE[1], COLORS.BLUE[2], p.life);
         ellipse(pos.x - centerX, pos.y - centerY, 6);
         p.life -= 3;
 
@@ -757,20 +944,27 @@ function updateParticles() {
         let p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.vx *= 0.98;
-        p.vy *= 0.98;
+        
+        if (p.size > 3) {
+            p.vx *= 0.95;
+            p.vy *= 0.95;
+        } else {
+            p.vx *= 0.98;
+            p.vy *= 0.98;
+        }
+        
         p.life--;
         p.alpha = map(p.life, 0, 50, 0, 255);
+        
+        let intensity = p.sparkIntensity || 1.0;
+        let actualAlpha = p.alpha * intensity;
 
-        // Use particle color if available, otherwise default to yellow
-        let color = p.color || [255, 255, 150];
-        fill(color[0], color[1], color[2], p.alpha);
+        let color = p.color || COLORS.BLUE;
+        fill(color[0], color[1], color[2], actualAlpha);
         noStroke();
-        ellipse(p.x, p.y, 3);
-
-        // Glow effect
-        fill(color[0], color[1], color[2], p.alpha * 0.3);
-        ellipse(p.x, p.y, 6);
+        
+        let currentSize = p.size || 3;
+        ellipse(p.x, p.y, currentSize);
 
         if (p.life <= 0 || p.alpha <= 0) {
             particles.splice(i, 1);
@@ -778,44 +972,7 @@ function updateParticles() {
     }
 }
 
-function drawSeconds() {
-    // Move seconds ring outside
-    let radius = WATCH.SECONDS_RADIUS;
-    let cx = 0;
-    let cy = 0;
-
-    for (let i = 0; i < 60; i++) {
-        let angle = TWO_PI * (i / 60) - HALF_PI;
-        let x = cx + cos(angle) * radius;
-        let y = cy + sin(angle) * radius;
-
-        let pulse = 1.5 + sin(frameCount * 0.1 + i) * 1.5;
-
-        if (i === currentSecond) {
-            fill(255, 255, 100);
-            ellipse(x, y, 5 + pulse);
-        } else {
-            fill(120);
-            ellipse(x, y, 3 + pulse * 0.5);
-        }
-    }
-}
-
-function drawWatchFrame() {
-    // Äußerer Rahmen
-    noFill();
-    stroke(80);
-    strokeWeight(3);
-    rect(0, 0, width, height, 90); // Abgerundete Ecken
-
-    // Digital Crown Andeutung
-    fill(80);
-    noStroke();
-    rect(width - 8, height / 2 - 20, 8, 40, 5, 0, 0, 5);
-    
-    // Seitentaste
-    rect(width - 8, height / 2 + 40, 8, 30, 5, 0, 0, 5);
-}
+function drawWatchFrame() {}
 
 function cleanup() {
     if (engine) {
@@ -832,7 +989,8 @@ function draw() {
     try {
         background(0);
         
-        // Update Matter.js physics
+        drawBackground();
+        
         Engine.update(engine);
         
         handleInput();
@@ -844,9 +1002,8 @@ function draw() {
         
         drawOrbits();
         drawPlanets();
-        updateFreedPlanets(); // Keep this for any existing freed planets
-        updateParticles(); // Keep this but it won't create new particles
-        drawSeconds();
+        updateFreedPlanets();
+        updateParticles();
         
         pop();
         
@@ -856,5 +1013,4 @@ function draw() {
     }
 }
 
-// Add window event listener for cleanup
 window.addEventListener('beforeunload', cleanup);

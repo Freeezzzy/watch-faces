@@ -14,6 +14,34 @@ const WATCH = {
     }
 };
 
+// Neue Hintergrund-Konstanten für Sterne
+const BACKGROUND = {
+    STAR_COUNT: 80,
+    TWINKLE_SPEED: 0.03,
+    STAR_MIN_SIZE: 1,
+    STAR_MAX_SIZE: 3,
+    SHOOTING_STAR_CHANCE: 0.003, // Increased from 0.0008 to 0.003
+    SHOOTING_STAR_DURATION: 60,
+    // Neue Konstanten für Spezialeffekte
+    SPECIAL_EVENT_DURATION: 900, // 15 Sekunden bei 60fps
+    HOURLY_TWINKLE_BOOST: 0.3,
+    SPECIAL_TWINKLE_BOOST: 0.6,
+    SPECIAL_SHOOTING_STAR_MULTIPLIER: 8,
+    // Neue Konstanten für Minuten-Effekte
+    MINUTE_EFFECT_DURATION: 60, // 1 Sekunde bei 60fps
+    MINUTE_FADE_DURATION: 60,   // 1 Sekunde fade in/out
+    MINUTE_TWINKLE_BOOST: 0.2,
+    MINUTE_SHOOTING_STAR_MULTIPLIER: 3
+};
+
+// Definiere die exakte 4-Farben-Palette
+const COLORS = {
+    BLACK: 0,
+    WHITE: 255,
+    GRAY: 100,  // Der EINE Grauton
+    YELLOW: [255, 255, 100]  // Das EINE Gelb
+};
+
 // Matter.js Module aliases
 const { Engine, Render, World, Bodies, Body, Constraint } = Matter;
 
@@ -29,6 +57,24 @@ let constraints = []; // Array of arrays - constraints[orbitIndex][planetIndex]
 let centerBody; // Static body at center for constraints
 let currentSecond = 0;
 let currentStage = 1; // 1 = white, 2 = yellow, 3 = breakaway
+
+// Sterne-Array
+let stars = [];
+let shootingStars = [];
+
+// Neue Variablen für Spezialeffekte
+let specialEventActive = false;
+let specialEventTimer = 0;
+let hourlyTwinkleActive = false;
+let hourlyTwinkleTimer = 0;
+let lastHour = -1;
+
+// Neue Variablen für Minuten-Effekte
+let minuteEffectActive = false;
+let minuteEffectTimer = 0;
+let minuteFadeTimer = 0;
+let minuteEffectIntensity = 0;
+let lastMinute = -1;
 
 // Time override variables
 let useCustomTime = false;
@@ -51,6 +97,7 @@ function setup() {
         centerX = width / 2;
         centerY = height / 2;
 
+        initializeStars(); // Neue Zeile
         createTimeControls();
         initializePhysics();
         updateTime();
@@ -58,6 +105,221 @@ function setup() {
     } catch (error) {
         console.error('Setup failed:', error);
     }
+}
+
+function initializeStars() {
+    stars = [];
+    for (let i = 0; i < BACKGROUND.STAR_COUNT; i++) {
+        stars.push({
+            x: random(0, width),
+            y: random(0, height),
+            size: random(BACKGROUND.STAR_MIN_SIZE, BACKGROUND.STAR_MAX_SIZE),
+            baseBrightness: random(0.4, 0.9),
+            twinkleOffset: random(0, TWO_PI),
+            twinkleSpeed: random(0.01, 0.03), // Langsamere Geschwindigkeit
+            twinkleIntensity: random(0.2, 0.4) // Weniger intensive Schwankung
+        });
+    }
+    shootingStars = [];
+}
+
+function drawBackground() {
+    // Zeichne aufblitzende Sterne
+    drawTwinklingStars();
+    
+    // Zeichne Sternschnuppen
+    drawShootingStars();
+    
+    // Subtile zentrale Ringe (sehr dezent)
+    drawCenterRings();
+}
+
+function drawTwinklingStars() {
+    noStroke();
+    
+    // Berechne Twinkle-Verstärkung basierend auf aktiven Effekten
+    let twinkleBoost = 0;
+    if (specialEventActive) {
+        twinkleBoost = BACKGROUND.SPECIAL_TWINKLE_BOOST;
+    } else if (hourlyTwinkleActive) {
+        twinkleBoost = BACKGROUND.HOURLY_TWINKLE_BOOST;
+    } else if (minuteEffectActive) {
+        // Fade in/out für Minuten-Effekt
+        twinkleBoost = BACKGROUND.MINUTE_TWINKLE_BOOST * minuteEffectIntensity;
+    }
+    
+    for (let i = 0; i < stars.length; i++) {
+        let star = stars[i];
+        
+        // Verstärkte Twinkle-Berechnung während Spezialevents
+        let baseSpeed = star.twinkleSpeed * (1 + twinkleBoost);
+        let twinkle1 = sin(frameCount * baseSpeed + star.twinkleOffset);
+        let twinkle2 = cos(frameCount * baseSpeed * 0.7 + star.twinkleOffset * 1.3);
+        let combinedTwinkle = (twinkle1 + twinkle2 * 0.5) / 1.5;
+        
+        // Verstärkte Intensität während Events
+        let intensity = star.twinkleIntensity * (1 + twinkleBoost);
+        let currentBrightness = star.baseBrightness + combinedTwinkle * intensity;
+        currentBrightness = constrain(currentBrightness, 0.2, 1.0);
+        
+        // NUR der eine Grauton - NO TRANSPARENCY
+        if (currentBrightness > 0.6) {
+            fill(COLORS.GRAY);
+        } else if (currentBrightness > 0.4) {
+            // Only show star if bright enough - binary visibility
+            if (random() < currentBrightness) {
+                fill(COLORS.GRAY);
+            } else {
+                continue; // Skip drawing this star
+            }
+        } else {
+            continue; // Don't draw dim stars
+        }
+        
+        // Verstärkte Größenvariation während Events
+        let sizeMultiplier = 1 + twinkleBoost * 0.5;
+        let currentSize = star.size * (0.8 + currentBrightness * 0.2) * sizeMultiplier;
+        
+        ellipse(star.x, star.y, currentSize);
+        
+        // Verstärkter Glow-Effekt während Events - NO TRANSPARENCY
+        if (currentBrightness > 0.75 - twinkleBoost * 0.2) {
+            fill(COLORS.GRAY);
+            ellipse(star.x, star.y, currentSize * (1.8 + twinkleBoost * 0.5));
+        }
+    }
+}
+
+function createShootingStar() {
+    // Create shooting star from random edge of screen
+    let startX, startY, vx, vy;
+    
+    // Choose random edge to start from
+    let edge = int(random(4));
+    switch(edge) {
+        case 0: // Top
+            startX = random(width);
+            startY = -10;
+            vx = random(-3, 3);
+            vy = random(2, 6);
+            break;
+        case 1: // Right
+            startX = width + 10;
+            startY = random(height);
+            vx = random(-6, -2);
+            vy = random(-3, 3);
+            break;
+        case 2: // Bottom
+            startX = random(width);
+            startY = height + 10;
+            vx = random(-3, 3);
+            vy = random(-6, -2);
+            break;
+        case 3: // Left
+            startX = -10;
+            startY = random(height);
+            vx = random(2, 6);
+            vy = random(-3, 3);
+            break;
+    }
+    
+    shootingStars.push({
+        x: startX,
+        y: startY,
+        vx: vx,
+        vy: vy,
+        life: BACKGROUND.SHOOTING_STAR_DURATION
+    });
+}
+
+function drawShootingStars() {
+    // Berechne Sternschnuppen-Wahrscheinlichkeit
+    let shootingChance = BACKGROUND.SHOOTING_STAR_CHANCE;
+    if (specialEventActive) {
+        shootingChance *= BACKGROUND.SPECIAL_SHOOTING_STAR_MULTIPLIER;
+    } else if (minuteEffectActive) {
+        // Fade in/out für Minuten-Effekt
+        shootingChance *= BACKGROUND.MINUTE_SHOOTING_STAR_MULTIPLIER * minuteEffectIntensity;
+    }
+    
+    // Erstelle neue Sternschnuppen - verstärkt während Events
+    if (currentStage === 1 && random() < shootingChance) {
+        createShootingStar();
+    }
+    
+    // Zeichne und update bestehende Sternschnuppen
+    for (let i = shootingStars.length - 1; i >= 0; i--) {
+        let meteor = shootingStars[i];
+        
+        // Update Position
+        meteor.x += meteor.vx;
+        meteor.y += meteor.vy;
+        meteor.life--;
+        
+        // Calculate visibility based on life - NO TRANSPARENCY
+        let lifeRatio = meteor.life / BACKGROUND.SHOOTING_STAR_DURATION;
+        
+        // Only draw if life ratio is high enough
+        if (lifeRatio < 0.3) {
+            // Fade out by random visibility
+            if (random() > lifeRatio * 3) {
+                // Skip drawing this frame
+                if (meteor.life <= 0 || meteor.x < -50 || meteor.x > width + 50 || 
+                    meteor.y < -50 || meteor.y > height + 50) {
+                    shootingStars.splice(i, 1);
+                }
+                continue;
+            }
+        }
+        
+        // Zeichne Sternschnuppe - using ONLY COLORS.GRAY
+        stroke(COLORS.GRAY);
+        strokeWeight(2);
+        
+        // Hauptlinie
+        line(meteor.x, meteor.y, 
+             meteor.x - meteor.vx * 8, meteor.y - meteor.vy * 8);
+        
+        // Schweif - nur zeichnen wenn hell genug
+        if (lifeRatio > 0.4) {
+            for (let j = 1; j <= 3; j++) {
+                if (random() < lifeRatio) { // Random trail visibility
+                    stroke(COLORS.GRAY);
+                    strokeWeight(2 - j * 0.5);
+                    line(meteor.x - meteor.vx * j * 3, meteor.y - meteor.vy * j * 3,
+                         meteor.x - meteor.vx * (j + 3) * 3, meteor.y - meteor.vy * (j + 3) * 3);
+                }
+            }
+        }
+        
+        // Kopf der Sternschnuppe
+        fill(COLORS.GRAY);
+        noStroke();
+        ellipse(meteor.x, meteor.y, 3);
+        
+        // Entferne abgelaufene Sternschnuppen
+        if (meteor.life <= 0 || meteor.x < -50 || meteor.x > width + 50 || 
+            meteor.y < -50 || meteor.y > height + 50) {
+            shootingStars.splice(i, 1);
+        }
+    }
+}
+
+function drawCenterRings() {
+    push();
+    translate(centerX, centerY);
+    noFill();
+    
+    // Sehr subtile konzentrische Kreise - NUR Grauton
+    for (let i = 1; i <= 3; i++) {
+        let radius = i * 70;
+        let alpha = map(i, 1, 3, 30, 10); // Transparenz-Variation
+        
+        stroke(COLORS.GRAY, alpha);
+        strokeWeight(0.5);
+        ellipse(0, 0, radius * 2);
+    }
+    pop();
 }
 
 function createTimeControls() {
@@ -119,6 +381,36 @@ function createTimeControls() {
     secondInput.style('margin-bottom', '10px');
     secondInput.parent(controlsDiv);
 
+    // Preset Buttons Container
+    const presetDiv = createDiv('');
+    presetDiv.style('margin-bottom', '10px');
+    presetDiv.parent(controlsDiv);
+
+    // Preset Button 1: 23:59:50
+    const preset1Button = createButton('23:59:50');
+    preset1Button.style('background', '#2196F3');
+    preset1Button.style('color', 'white');
+    preset1Button.style('border', 'none');
+    preset1Button.style('padding', '5px 8px');
+    preset1Button.style('border-radius', '3px');
+    preset1Button.style('cursor', 'pointer');
+    preset1Button.style('margin-right', '5px');
+    preset1Button.style('font-size', '11px');
+    preset1Button.mousePressed(() => setPresetTime(23, 59, 50));
+    preset1Button.parent(presetDiv);
+
+    // Preset Button 2: 16:46:37
+    const preset2Button = createButton('16:46:37');
+    preset2Button.style('background', '#FF9800');
+    preset2Button.style('color', 'white');
+    preset2Button.style('border', 'none');
+    preset2Button.style('padding', '5px 8px');
+    preset2Button.style('border-radius', '3px');
+    preset2Button.style('cursor', 'pointer');
+    preset2Button.style('font-size', '11px');
+    preset2Button.mousePressed(() => setPresetTime(16, 46, 37));
+    preset2Button.parent(presetDiv);
+
     // Set Time Button
     setTimeButton = createButton('Set Custom Time');
     setTimeButton.style('background', '#4CAF50');
@@ -150,6 +442,27 @@ function createTimeControls() {
     statusP.style('font-size', '12px');
     statusP.style('color', '#cccccc');
     statusP.parent(controlsDiv);
+}
+
+function setPresetTime(h, m, s) {
+    // Update input fields
+    hourInput.value(h.toString());
+    minuteInput.value(m.toString());
+    secondInput.value(s.toString());
+    
+    // Set the time
+    customHour = h;
+    customMinute = m;
+    customSecond = s;
+    useCustomTime = true;
+    
+    // Update display immediately
+    updateTime();
+    
+    // Update status
+    select('#timeStatus').html(`Status: Custom Time (${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')})`);
+    
+    console.log(`Preset time set to: ${h}:${m}:${s}`);
 }
 
 function setCustomTime() {
@@ -358,6 +671,35 @@ function updateTime() {
     let s = time.s;
     
     currentSecond = s;
+
+    // Prüfe auf Spezialevents (12:00 und 00:00)
+    if ((h === 12 || h === 0) && m === 0 && s === 0) {
+        if (!specialEventActive) {
+            specialEventActive = true;
+            specialEventTimer = BACKGROUND.SPECIAL_EVENT_DURATION;
+            console.log(`Special event triggered at ${h}:00!`);
+        }
+    }
+    
+    // Prüfe auf stündliches Funkeln (JEDE volle Stunde)
+    if (h !== lastHour && m === 0 && s === 0) {
+        hourlyTwinkleActive = true;
+        hourlyTwinkleTimer = Math.floor(BACKGROUND.SPECIAL_EVENT_DURATION * 0.3); // 4.5 Sekunden
+        console.log(`Hourly twinkle triggered at ${h}:00!`);
+    }
+    lastHour = h;
+
+    // Prüfe auf Minuten-Effekt (jede neue Minute)
+    if (m !== lastMinute && s === 0) {
+        if (!minuteEffectActive) {
+            minuteEffectActive = true;
+            minuteEffectTimer = BACKGROUND.MINUTE_EFFECT_DURATION;
+            minuteFadeTimer = 0;
+            minuteEffectIntensity = 0;
+            console.log(`Minute effect triggered at ${h}:${String(m).padStart(2, '0')}!`);
+        }
+    }
+    lastMinute = m;
 
     // Keep 24-hour format - no conversion needed
     // Reihenfolge der Digits: m2, m1, h2, h1 (außen nach innen)
@@ -664,7 +1006,7 @@ function applySpacingForces(orbitIndex, planetIndex, currentPos) {
 
 function drawOrbits() {
     noFill();
-    stroke(100);
+    stroke(COLORS.GRAY); // NUR der eine Grauton
     strokeWeight(1);
     // Only draw the orbit circles
     for (let i = 0; i < WATCH.ORBIT_RADII.length; i++) {
@@ -682,10 +1024,11 @@ function drawPlanets() {
                 let pos = planetBodies[i][j].position;
                 let x = pos.x - centerX;
                 let y = pos.y - centerY;
+                let velocity = planetBodies[i][j].velocity;
                 
-                // Color based on current stage - keep yellow for all accelerated stages
+                // Color based on current stage - NUR Gelb oder Weiß
                 if (currentStage === 3) {
-                    fill(255, 255, 100); // Yellow when broken free (same as stage 2)
+                    fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2]); // Das EINE Gelb
                     
                     // Extra sparkles in stage 3
                     if (random() < 0.35) {
@@ -697,29 +1040,39 @@ function drawPlanets() {
                                 vy: random(-5, 5),
                                 alpha: 255,
                                 life: 20 + random(30),
-                                color: [255, 255, 100] // Yellow sparkles (not red)
+                                size: random(2, 4),
+                                color: COLORS.YELLOW // Das EINE Gelb
                             });
                         }
                     }
                 } else if (currentStage === 2) {
-                    fill(255, 255, 100); // Yellow when fast
+                    fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2]); // Das EINE Gelb
                     
-                    // Normal sparkles in stage 2
-                    if (random() < 0.25) {
-                        for (let k = 0; k < 3; k++) {
+                    // Improved sparks in stage 2 - more realistic sparking effect
+                    if (random() < 0.3) {
+                        let speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+                        let sparkCount = int(random(2, 6)); // Variable number of sparks
+                        
+                        for (let k = 0; k < sparkCount; k++) {
+                            // Calculate spark direction based on planet movement
+                            let sparkDirection = atan2(velocity.y, velocity.x) + random(-PI/3, PI/3);
+                            let sparkSpeed = random(3, 8) + speed * 0.5; // Speed influenced by planet velocity
+                            
                             particles.push({
-                                x: x + random(-5, 5),
-                                y: y + random(-5, 5),
-                                vx: random(-4, 4),
-                                vy: random(-4, 4),
-                                alpha: 255,
-                                life: 25 + random(25),
-                                color: [255, 255, 100] // Yellow sparkles
+                                x: x + random(-4, 4),
+                                y: y + random(-4, 4),
+                                vx: cos(sparkDirection) * sparkSpeed + random(-2, 2),
+                                vy: sin(sparkDirection) * sparkSpeed + random(-2, 2),
+                                alpha: random(200, 255),
+                                life: random(15, 40), // Variable lifespan
+                                size: random(1, 5), // Variable sizes for more realistic sparks
+                                sparkIntensity: random(0.7, 1.0), // Individual brightness
+                                color: COLORS.YELLOW // Das EINE Gelb
                             });
                         }
                     }
                 } else {
-                    fill(255); // White when normal speed
+                    fill(COLORS.WHITE); // Das EINE Weiß
                 }
                 
                 ellipse(x, y, 8);
@@ -741,7 +1094,7 @@ function updateFreedPlanets() {
             continue;
         }
         
-        fill(255, 255, 100, p.life);
+        fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2], p.life); // Das EINE Gelb
         ellipse(pos.x - centerX, pos.y - centerY, 6);
         p.life -= 3;
 
@@ -757,20 +1110,33 @@ function updateParticles() {
         let p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.vx *= 0.98;
-        p.vy *= 0.98;
+        
+        // Different decay rates for different particle types
+        if (p.size > 3) {
+            // Larger sparks fade slower and decelerate more
+            p.vx *= 0.95;
+            p.vy *= 0.95;
+        } else {
+            // Smaller sparks fade faster and maintain speed longer
+            p.vx *= 0.98;
+            p.vy *= 0.98;
+        }
+        
         p.life--;
         p.alpha = map(p.life, 0, 50, 0, 255);
+        
+        // Apply spark intensity if it exists
+        let intensity = p.sparkIntensity || 1.0;
+        let actualAlpha = p.alpha * intensity;
 
-        // Use particle color if available, otherwise default to yellow
-        let color = p.color || [255, 255, 150];
-        fill(color[0], color[1], color[2], p.alpha);
+        // NUR das eine Gelb verwenden
+        let color = p.color || COLORS.YELLOW;
+        fill(color[0], color[1], color[2], actualAlpha);
         noStroke();
-        ellipse(p.x, p.y, 3);
-
-        // Glow effect
-        fill(color[0], color[1], color[2], p.alpha * 0.3);
-        ellipse(p.x, p.y, 6);
+        
+        // Draw spark with variable size - NO GLOW EFFECTS
+        let currentSize = p.size || 3;
+        ellipse(p.x, p.y, currentSize);
 
         if (p.life <= 0 || p.alpha <= 0) {
             particles.splice(i, 1);
@@ -792,29 +1158,17 @@ function drawSeconds() {
         let pulse = 1.5 + sin(frameCount * 0.1 + i) * 1.5;
 
         if (i === currentSecond) {
-            fill(255, 255, 100);
+            fill(COLORS.YELLOW[0], COLORS.YELLOW[1], COLORS.YELLOW[2]); // Das EINE Gelb
             ellipse(x, y, 5 + pulse);
         } else {
-            fill(120);
+            fill(COLORS.GRAY); // Der EINE Grauton
             ellipse(x, y, 3 + pulse * 0.5);
         }
     }
 }
 
 function drawWatchFrame() {
-    // Äußerer Rahmen
-    noFill();
-    stroke(80);
-    strokeWeight(3);
-    rect(0, 0, width, height, 90); // Abgerundete Ecken
-
-    // Digital Crown Andeutung
-    fill(80);
-    noStroke();
-    rect(width - 8, height / 2 - 20, 8, 40, 5, 0, 0, 5);
-    
-    // Seitentaste
-    rect(width - 8, height / 2 + 40, 8, 30, 5, 0, 0, 5);
+    // Komplett leere Funktion - nur die Matter.js Wände bleiben für die Physik
 }
 
 function cleanup() {
@@ -832,6 +1186,52 @@ function draw() {
     try {
         background(0);
         
+        // Update Spezialeffekt-Timer
+        if (specialEventActive) {
+            specialEventTimer--;
+            if (specialEventTimer <= 0) {
+                specialEventActive = false;
+                console.log('Special event ended');
+            }
+        }
+        
+        if (hourlyTwinkleActive) {
+            hourlyTwinkleTimer--;
+            if (hourlyTwinkleTimer <= 0) {
+                hourlyTwinkleActive = false;
+                console.log('Hourly twinkle ended');
+            }
+        }
+        
+        // Update Minuten-Effekt mit Fade
+        if (minuteEffectActive) {
+            minuteFadeTimer++;
+            
+            // Fade in (erste Sekunde)
+            if (minuteFadeTimer <= BACKGROUND.MINUTE_FADE_DURATION) {
+                minuteEffectIntensity = minuteFadeTimer / BACKGROUND.MINUTE_FADE_DURATION;
+            }
+            // Fade out (letzte Sekunde)
+            else if (minuteFadeTimer >= BACKGROUND.MINUTE_EFFECT_DURATION - BACKGROUND.MINUTE_FADE_DURATION) {
+                let remainingFrames = BACKGROUND.MINUTE_EFFECT_DURATION - minuteFadeTimer;
+                minuteEffectIntensity = remainingFrames / BACKGROUND.MINUTE_FADE_DURATION;
+            }
+            // Full intensity (mittlere Zeit)
+            else {
+                minuteEffectIntensity = 1.0;
+            }
+            
+            // Beende Effekt
+            if (minuteFadeTimer >= BACKGROUND.MINUTE_EFFECT_DURATION) {
+                minuteEffectActive = false;
+                minuteEffectIntensity = 0;
+                console.log('Minute effect ended');
+            }
+        }
+        
+        // Sternenhimmel-Hintergrund zuerst zeichnen
+        drawBackground();
+        
         // Update Matter.js physics
         Engine.update(engine);
         
@@ -844,8 +1244,8 @@ function draw() {
         
         drawOrbits();
         drawPlanets();
-        updateFreedPlanets(); // Keep this for any existing freed planets
-        updateParticles(); // Keep this but it won't create new particles
+        updateFreedPlanets();
+        updateParticles();
         drawSeconds();
         
         pop();
