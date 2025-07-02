@@ -256,27 +256,52 @@ function tick() {
   // Stundenblock
   if (h !== actH && boxes[0]) {
     if (blocks[0] && blocks[0].body) {
+      blocks[0].removeConstraint(blocks[0].constraints[0]);
+      blocks[0].removeConstraint(blocks[0].constraints[1]);
+      blocks[0].removeConstraint(blocks[0].constraints[2]);
+      blocks[0].removeConstraint(blocks[0].constraints[3]);
       Matter.World.remove(world, blocks[0].body);
     }
-    createCode(h, 0, "#727272");
+    createCode(h, 0, "#727272");    
+    blocks[0].constrainTo(boxes[0], {pointA: {x: -100, y: 0}, pointB: {x: -150, y: -150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
+    blocks[0].constrainTo(boxes[0], {pointA: {x: 100, y: -4}, pointB: {x: 150, y: -150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
+    blocks[0].constrainTo(boxes[0], {pointA: {x: -100, y: 0}, pointB: {x: -150, y: 150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
+    blocks[0].constrainTo(boxes[0], {pointA: {x: 100, y: 4}, pointB: {x: 150, y: 150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
+   
     actH = h;
   }
 
   // Minutenblock
   if (min !== actMin && boxes[1]) {
     if (blocks[1] && blocks[1].body) {
+      blocks[1].removeConstraint(blocks[1].constraints[0]);
+      blocks[1].removeConstraint(blocks[1].constraints[1]);
+      blocks[1].removeConstraint(blocks[1].constraints[2]);
+      blocks[1].removeConstraint(blocks[1].constraints[3]);
       Matter.World.remove(world, blocks[1].body);
     }
     createCode(min, 1, '#00FF2A');
+    blocks[1].constrainTo(boxes[1], {pointA: {x: -140, y: 0}, pointB: {x: -150, y: -150}, length: 150, stiffness: 0.1, draw:true, color:"white"});
+    blocks[1].constrainTo(boxes[1], {pointA: {x: 140, y: 0}, pointB: {x: 150, y: -150}, length: 150, stiffness: 0.1, draw:true, color:"white"});
+    blocks[1].constrainTo(boxes[1], {pointA: {x: -140, y: 0}, pointB: {x: -150, y: 150}, length: 150, stiffness: 0.1, draw:true, color:"white"});
+    blocks[1].constrainTo(boxes[1], {pointA: {x: 140, y: 0}, pointB: {x: 150, y: 150}, length: 150, stiffness: 0.1, draw:true, color:"white"});
     actMin = min;
   }
 
   // Sekundenblock
   if (sec !== actSec && boxes[2]) {
     if (blocks[2] && blocks[2].body) {
+      blocks[2].removeConstraint(blocks[2].constraints[0]);
+      blocks[2].removeConstraint(blocks[2].constraints[1]);
+      blocks[2].removeConstraint(blocks[2].constraints[2]);
+      blocks[2].removeConstraint(blocks[2].constraints[3]);
       Matter.World.remove(world, blocks[2].body);
     }
     createCode(sec, 2, 'white');
+    blocks[2].constrainTo(boxes[2], {pointA: {x: -140, y: 0}, pointB: {x: -150, y: -150}, length: 150, stiffness: 0.07, draw:true, color:"#727272"});
+    blocks[2].constrainTo(boxes[2], {pointA: {x: 140, y: 0}, pointB: {x: 150, y: -150}, length: 150, stiffness: 0.07, draw:true, color:"#727272"});
+    blocks[2].constrainTo(boxes[2], {pointA: {x: -140, y: 0}, pointB: {x: -150, y: 150}, length: 150, stiffness: 0.07, draw:true, color:"#727272"});
+    blocks[2].constrainTo(boxes[2], {pointA: {x: 140, y: 0}, pointB: {x: 150, y: 150}, length: 150, stiffness: 0.07, draw:true, color:"#727272"});
     actSec = sec;
   }
 }
@@ -323,6 +348,7 @@ function draw() {
 }
 
 function keyPressed() {
+  console.log ('-' +key +'-')
   const forceAmount = 2;
 
   // Box 0: Steuerung mit WASD
@@ -341,6 +367,11 @@ function keyPressed() {
   if (key === 'd') {
     console.log('d');
     world.gravity.x = 1
+  }
+  if (key === ' '){
+    console.log ('space')
+    world.gravity.x=0;
+    world.gravity.y=1;
   }
 
   // Box 1: Steuerung mit Pfeiltasten
