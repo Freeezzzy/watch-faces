@@ -21,7 +21,12 @@ const BACKGROUND = {
     STAR_MIN_SIZE: 1,
     STAR_MAX_SIZE: 3,
     SHOOTING_STAR_CHANCE: 0.003, // Increased from 0.0008 to 0.003
-    SHOOTING_STAR_DURATION: 60
+    SHOOTING_STAR_DURATION: 60,
+    // Neue Konstanten für Spezialeffekte
+    SPECIAL_EVENT_DURATION: 900, // 15 Sekunden bei 60fps
+    HOURLY_TWINKLE_BOOST: 0.3,
+    SPECIAL_TWINKLE_BOOST: 0.6,
+    SPECIAL_SHOOTING_STAR_MULTIPLIER: 8
 };
 
 // Definiere die exakte 4-Farben-Palette
@@ -51,6 +56,13 @@ let currentStage = 1; // 1 = white, 2 = yellow, 3 = breakaway
 // Sterne-Array
 let stars = [];
 let shootingStars = [];
+
+// Neue Variablen für Spezialeffekte
+let specialEventActive = false;
+let specialEventTimer = 0;
+let hourlyTwinkleActive = false;
+let hourlyTwinkleTimer = 0;
+let lastHour = -1;
 
 // Time override variables
 let useCustomTime = false;
@@ -113,30 +125,42 @@ function drawBackground() {
 function drawTwinklingStars() {
     noStroke();
     
+    // Berechne Twinkle-Verstärkung basierend auf aktiven Effekten
+    let twinkleBoost = 0;
+    if (specialEventActive) {
+        twinkleBoost = BACKGROUND.SPECIAL_TWINKLE_BOOST;
+    } else if (hourlyTwinkleActive) {
+        twinkleBoost = BACKGROUND.HOURLY_TWINKLE_BOOST;
+    }
+    
     for (let i = 0; i < stars.length; i++) {
         let star = stars[i];
         
-        // Sanftere Twinkle-Berechnung mit sin und cos für smoothere Bewegung
-        let twinkle1 = sin(frameCount * star.twinkleSpeed + star.twinkleOffset);
-        let twinkle2 = cos(frameCount * star.twinkleSpeed * 0.7 + star.twinkleOffset * 1.3);
+        // Verstärkte Twinkle-Berechnung während Spezialevents
+        let baseSpeed = star.twinkleSpeed * (1 + twinkleBoost);
+        let twinkle1 = sin(frameCount * baseSpeed + star.twinkleOffset);
+        let twinkle2 = cos(frameCount * baseSpeed * 0.7 + star.twinkleOffset * 1.3);
         let combinedTwinkle = (twinkle1 + twinkle2 * 0.5) / 1.5;
         
-        let currentBrightness = star.baseBrightness + combinedTwinkle * star.twinkleIntensity;
+        // Verstärkte Intensität während Events
+        let intensity = star.twinkleIntensity * (1 + twinkleBoost);
+        let currentBrightness = star.baseBrightness + combinedTwinkle * intensity;
         currentBrightness = constrain(currentBrightness, 0.2, 1.0);
         
         // NUR der eine Grauton mit variabler Transparenz
         let alpha = map(currentBrightness, 0.2, 1.0, 80, 255);
         fill(COLORS.GRAY, alpha);
         
-        // Sanftere Größenvariation
-        let currentSize = star.size * (0.8 + currentBrightness * 0.2);
+        // Verstärkte Größenvariation während Events
+        let sizeMultiplier = 1 + twinkleBoost * 0.5;
+        let currentSize = star.size * (0.8 + currentBrightness * 0.2) * sizeMultiplier;
         
         ellipse(star.x, star.y, currentSize);
         
-        // Für hellere Sterne: sanfterer Glow-Effekt
-        if (currentBrightness > 0.75) {
-            fill(COLORS.GRAY, alpha * 0.4);
-            ellipse(star.x, star.y, currentSize * 1.8);
+        // Verstärkter Glow-Effekt während Events
+        if (currentBrightness > 0.75 - twinkleBoost * 0.2) {
+            fill(COLORS.GRAY, alpha * 0.4 * (1 + twinkleBoost));
+            ellipse(star.x, star.y, currentSize * (1.8 + twinkleBoost * 0.5));
         }
     }
 }
@@ -184,8 +208,14 @@ function createShootingStar() {
 }
 
 function drawShootingStars() {
-    // Erstelle neue Sternschnuppen - only in stage 1 for cleaner look
-    if (currentStage === 1 && random() < BACKGROUND.SHOOTING_STAR_CHANCE) {
+    // Berechne Sternschnuppen-Wahrscheinlichkeit
+    let shootingChance = BACKGROUND.SHOOTING_STAR_CHANCE;
+    if (specialEventActive) {
+        shootingChance *= BACKGROUND.SPECIAL_SHOOTING_STAR_MULTIPLIER;
+    }
+    
+    // Erstelle neue Sternschnuppen - verstärkt während Events
+    if (currentStage === 1 && random() < shootingChance) {
         createShootingStar();
     }
     
@@ -198,12 +228,12 @@ function drawShootingStars() {
         meteor.y += meteor.vy;
         meteor.life--;
         
-        // Berechne Alpha basierend auf Lebensdauer - brighter for better visibility
-        let alpha = map(meteor.life, 0, BACKGROUND.SHOOTING_STAR_DURATION, 0, 200); // Increased max alpha
-        alpha = constrain(alpha, 0, 200);
+        // Berechne Alpha basierend auf Lebensdauer - using strict color palette
+        let alpha = map(meteor.life, 0, BACKGROUND.SHOOTING_STAR_DURATION, 0, 255);
+        alpha = constrain(alpha, 0, 255);
         
-        // Zeichne Sternschnuppe - brighter gray for better visibility
-        stroke(180, alpha); // Brighter gray instead of COLORS.GRAY
+        // Zeichne Sternschnuppe - using ONLY COLORS.GRAY
+        stroke(COLORS.GRAY, alpha);
         strokeWeight(2);
         
         // Hauptlinie
@@ -213,14 +243,14 @@ function drawShootingStars() {
         // Schweif mit abnehmendem Alpha
         for (let j = 1; j <= 3; j++) {
             let trailAlpha = alpha * (1 - j * 0.3);
-            stroke(180, trailAlpha); // Brighter gray
+            stroke(COLORS.GRAY, trailAlpha); // Using COLORS.GRAY consistently
             strokeWeight(2 - j * 0.5);
             line(meteor.x - meteor.vx * j * 3, meteor.y - meteor.vy * j * 3,
                  meteor.x - meteor.vx * (j + 3) * 3, meteor.y - meteor.vy * (j + 3) * 3);
         }
         
-        // Kopf der Sternschnuppe (heller Punkt) - brighter
-        fill(200, alpha); // Brighter than COLORS.GRAY
+        // Kopf der Sternschnuppe (heller Punkt) - using COLORS.GRAY
+        fill(COLORS.GRAY, alpha);
         noStroke();
         ellipse(meteor.x, meteor.y, 3);
         
@@ -308,6 +338,36 @@ function createTimeControls() {
     secondInput.style('margin-bottom', '10px');
     secondInput.parent(controlsDiv);
 
+    // Preset Buttons Container
+    const presetDiv = createDiv('');
+    presetDiv.style('margin-bottom', '10px');
+    presetDiv.parent(controlsDiv);
+
+    // Preset Button 1: 23:59:50
+    const preset1Button = createButton('23:59:50');
+    preset1Button.style('background', '#2196F3');
+    preset1Button.style('color', 'white');
+    preset1Button.style('border', 'none');
+    preset1Button.style('padding', '5px 8px');
+    preset1Button.style('border-radius', '3px');
+    preset1Button.style('cursor', 'pointer');
+    preset1Button.style('margin-right', '5px');
+    preset1Button.style('font-size', '11px');
+    preset1Button.mousePressed(() => setPresetTime(23, 59, 50));
+    preset1Button.parent(presetDiv);
+
+    // Preset Button 2: 16:46:37
+    const preset2Button = createButton('16:46:37');
+    preset2Button.style('background', '#FF9800');
+    preset2Button.style('color', 'white');
+    preset2Button.style('border', 'none');
+    preset2Button.style('padding', '5px 8px');
+    preset2Button.style('border-radius', '3px');
+    preset2Button.style('cursor', 'pointer');
+    preset2Button.style('font-size', '11px');
+    preset2Button.mousePressed(() => setPresetTime(16, 46, 37));
+    preset2Button.parent(presetDiv);
+
     // Set Time Button
     setTimeButton = createButton('Set Custom Time');
     setTimeButton.style('background', '#4CAF50');
@@ -339,6 +399,27 @@ function createTimeControls() {
     statusP.style('font-size', '12px');
     statusP.style('color', '#cccccc');
     statusP.parent(controlsDiv);
+}
+
+function setPresetTime(h, m, s) {
+    // Update input fields
+    hourInput.value(h.toString());
+    minuteInput.value(m.toString());
+    secondInput.value(s.toString());
+    
+    // Set the time
+    customHour = h;
+    customMinute = m;
+    customSecond = s;
+    useCustomTime = true;
+    
+    // Update display immediately
+    updateTime();
+    
+    // Update status
+    select('#timeStatus').html(`Status: Custom Time (${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')})`);
+    
+    console.log(`Preset time set to: ${h}:${m}:${s}`);
 }
 
 function setCustomTime() {
@@ -547,6 +628,23 @@ function updateTime() {
     let s = time.s;
     
     currentSecond = s;
+
+    // Prüfe auf Spezialevents (12:00 und 00:00)
+    if ((h === 12 || h === 0) && m === 0 && s === 0) {
+        if (!specialEventActive) {
+            specialEventActive = true;
+            specialEventTimer = BACKGROUND.SPECIAL_EVENT_DURATION;
+            console.log(`Special event triggered at ${h}:00!`);
+        }
+    }
+    
+    // Prüfe auf stündliches Funkeln (JEDE volle Stunde)
+    if (h !== lastHour && m === 0 && s === 0) {
+        hourlyTwinkleActive = true;
+        hourlyTwinkleTimer = Math.floor(BACKGROUND.SPECIAL_EVENT_DURATION * 0.3); // 4.5 Sekunden
+        console.log(`Hourly twinkle triggered at ${h}:00!`);
+    }
+    lastHour = h;
 
     // Keep 24-hour format - no conversion needed
     // Reihenfolge der Digits: m2, m1, h2, h1 (außen nach innen)
@@ -1032,6 +1130,23 @@ function cleanup() {
 function draw() {
     try {
         background(0);
+        
+        // Update Spezialeffekt-Timer
+        if (specialEventActive) {
+            specialEventTimer--;
+            if (specialEventTimer <= 0) {
+                specialEventActive = false;
+                console.log('Special event ended');
+            }
+        }
+        
+        if (hourlyTwinkleActive) {
+            hourlyTwinkleTimer--;
+            if (hourlyTwinkleTimer <= 0) {
+                hourlyTwinkleActive = false;
+                console.log('Hourly twinkle ended');
+            }
+        }
         
         // Sternenhimmel-Hintergrund zuerst zeichnen
         drawBackground();
