@@ -8,25 +8,28 @@ const WATCH = {
         MIN: 0.002,
         INITIAL: 0.019,
         INCREMENT: 0.001,
-        MAX: 0.25,
-        YELLOW_THRESHOLD: 0.15,    // Changed from 0.20 to 0.12
-        BREAKAWAY_THRESHOLD: 0.22  // Changed from 0.30 to 0.17
+        MAX: 0.18,                     // Reduced from 0.25 to 0.18 (28% reduction)
+        YELLOW_THRESHOLD: 0.10,        // Reduced from 0.15 to 0.10 (earlier phase 2)
+        BREAKAWAY_THRESHOLD: 0.15      // Reduced from 0.22 to 0.15 (earlier phase 3)
     }
 };
 
 // Neue Hintergrund-Konstanten für Sterne
 const BACKGROUND = {
-    STAR_COUNT: 80,
+    STAR_COUNT: 40,  // Reduced from 80 to 40 (half the stars)
     TWINKLE_SPEED: 0.03,
     STAR_MIN_SIZE: 1,
     STAR_MAX_SIZE: 3,
-    SHOOTING_STAR_CHANCE: 0.003, // Increased from 0.0008 to 0.003
+    SHOOTING_STAR_CHANCE: 0.003,
     SHOOTING_STAR_DURATION: 60,
     // Neue Konstanten für Spezialeffekte
-    SPECIAL_EVENT_DURATION: 900, // 15 Sekunden bei 60fps
+    SPECIAL_EVENT_DURATION: 900,
     HOURLY_TWINKLE_BOOST: 0.3,
     SPECIAL_TWINKLE_BOOST: 0.6,
-    SPECIAL_SHOOTING_STAR_MULTIPLIER: 8
+    SPECIAL_SHOOTING_STAR_MULTIPLIER: 8,
+    // Neue Konstanten für Sekunden-Effekte
+    SECOND_EFFECT_DURATION: 180,
+    SECOND_SHOOTING_STAR_MULTIPLIER: 3
 };
 
 // Definiere die exakte 4-Farben-Palette
@@ -63,6 +66,15 @@ let specialEventTimer = 0;
 let hourlyTwinkleActive = false;
 let hourlyTwinkleTimer = 0;
 let lastHour = -1;
+
+// Neue Variablen für Sekunden-Effekte
+let secondEffectActive = false;
+let secondEffectTimer = 0;
+let lastSecond = -1;
+
+// Add new state variables after existing ones
+let lastMinute = -1;
+let minuteStarsCreated = false;
 
 // Time override variables
 let useCustomTime = false;
@@ -208,13 +220,13 @@ function createShootingStar() {
 }
 
 function drawShootingStars() {
-    // Berechne Sternschnuppen-Wahrscheinlichkeit
+    // Normale Sternschnuppen-Wahrscheinlichkeit (NICHT erhöht bei neuen Minuten)
     let shootingChance = BACKGROUND.SHOOTING_STAR_CHANCE;
     if (specialEventActive) {
         shootingChance *= BACKGROUND.SPECIAL_SHOOTING_STAR_MULTIPLIER;
     }
     
-    // Erstelle neue Sternschnuppen - verstärkt während Events
+    // Erstelle normale Sternschnuppen (die 3 Minuten-Sternschnuppen werden in updateTime() erstellt)
     if (currentStage === 1 && random() < shootingChance) {
         createShootingStar();
     }
@@ -596,14 +608,14 @@ function createPlanetAtOrbit(orbitIndex, angle) {
 
 function handleInput() {
     if (keyIsDown(87)) { // W key
-        orbitSpeed += WATCH.ORBIT_SPEED.INCREMENT;
+        orbitSpeed += WATCH.ORBIT_SPEED.INCREMENT * 0.3; // Reduced from 1.0 to 0.3
         // Cap the maximum speed
         if (orbitSpeed > WATCH.ORBIT_SPEED.MAX) {
             orbitSpeed = WATCH.ORBIT_SPEED.MAX;
         }
     }
     if (keyIsDown(83)) { // S key
-        orbitSpeed -= WATCH.ORBIT_SPEED.INCREMENT;
+        orbitSpeed -= WATCH.ORBIT_SPEED.INCREMENT * 0.3; // Reduced from 1.0 to 0.3
         // Cap the maximum negative speed
         if (orbitSpeed < -WATCH.ORBIT_SPEED.MAX) {
             orbitSpeed = -WATCH.ORBIT_SPEED.MAX;
@@ -628,6 +640,25 @@ function updateTime() {
     let s = time.s;
     
     currentSecond = s;
+
+    // Prüfe auf neue Minute (nur bei Sekunde 0)
+    if (m !== lastMinute && s === 0) {
+        minuteStarsCreated = false; // Reset flag for new minute
+        
+        // Erstelle sofort 3 Sternschnuppen
+        for (let i = 0; i < 3; i++) {
+            setTimeout(() => createShootingStar(), i * 150); // Verzögert um 150ms pro Stern
+        }
+        minuteStarsCreated = true;
+        console.log(`3 shooting stars created at ${h}:${String(m).padStart(2, '0')}:00!`);
+    }
+    
+    // Reset flag when leaving second 0
+    if (s !== 0) {
+        minuteStarsCreated = false;
+    }
+    
+    lastMinute = m;
 
     // Prüfe auf Spezialevents (12:00 und 00:00)
     if ((h === 12 || h === 0) && m === 0 && s === 0) {
@@ -1145,6 +1176,15 @@ function draw() {
             if (hourlyTwinkleTimer <= 0) {
                 hourlyTwinkleActive = false;
                 console.log('Hourly twinkle ended');
+            }
+        }
+        
+        // Update Sekunden-Effekt-Timer
+        if (secondEffectActive) {
+            secondEffectTimer--;
+            if (secondEffectTimer <= 0) {
+                secondEffectActive = false;
+                console.log('Second effect ended');
             }
         }
         
