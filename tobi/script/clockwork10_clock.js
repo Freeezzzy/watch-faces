@@ -187,7 +187,8 @@ function calculateTimePositions() {
 
 function calculateSegmentPositions(centerX, centerY, width, height) {
   const segmentPositions = [];
-  const dotSpacing = 5; // Fester Abstand zwischen Punkten (5px)
+  // VIEL MEHR Punkte pro Segment für dichte Verteilung - besonders für Ziffer "1"
+  const minPointsPerSegment = 20; // Mindestens 20 Punkte pro Segment
   
   // 7 Segmente definieren
   const segments = [
@@ -214,7 +215,7 @@ function calculateSegmentPositions(centerX, centerY, width, height) {
       endX: centerX + width/2 - 10, endY: centerY }
   ];
   
-  // Für jedes Segment Positionen mit festem Abstand erstellen
+  // Für jedes Segment VIELE Positionen erstellen (für dichte Verteilung)
   segments.forEach(segment => {
     const positions = [];
     
@@ -224,10 +225,11 @@ function calculateSegmentPositions(centerX, centerY, width, height) {
       Math.pow(segment.endY - segment.startY, 2)
     );
     
-    // Berechne Anzahl der Punkte basierend auf festem Abstand
-    const numPoints = Math.max(1, Math.floor(segmentLength / dotSpacing) + 1);
+    // GARANTIERT genug Punkte: mindestens 20 Punkte pro Segment
+    // Für kurze Segmente werden die Punkte enger gesetzt
+    const numPoints = Math.max(minPointsPerSegment, Math.floor(segmentLength / 3) + 1);
     
-    // Punkte mit festem Abstand platzieren
+    // Punkte gleichmäßig auf Segment verteilen
     for (let i = 0; i < numPoints; i++) {
       const t = numPoints > 1 ? i / (numPoints - 1) : 0;
       const x = lerp(segment.startX, segment.endX, t);
@@ -276,25 +278,55 @@ function updateTimeDisplay() {
       }
     });
     
-    // Genau 30 Punkte für diese Ziffer auswählen
-    if (allPositions.length > 0) {
-      // Gleichmäßig 30 Punkte aus allen verfügbaren Positionen auswählen
-      const selectedPositions = [];
-      for (let i = 0; i < 30; i++) {
-        const index = Math.floor((i / 29) * (allPositions.length - 1));
-        const pos = allPositions[index];
-        selectedPositions.push({
-          x: pos.x,
-          y: pos.y,
-          isBlue: false, // Startet als grau
-          digitIndex: digitIndex,
-          segmentIndex: pos.segmentIndex
-        });
+    // GENAU 30 PUNKTE PRO ZIFFER - GARANTIERT!
+    const targetPointCount = 30;
+    let selectedPositions = [];
+    
+    if (allPositions.length >= targetPointCount) {
+      // Wenn mehr als 30 Positionen verfügbar: gleichmäßig verteilt auswählen
+      for (let i = 0; i < targetPointCount; i++) {
+        const index = Math.floor((i * allPositions.length) / targetPointCount);
+        selectedPositions.push(allPositions[index]);
       }
-      
-      // Punkte zur Gesamtliste hinzufügen
-      timePoints.push(...selectedPositions);
+    } else if (allPositions.length > 0) {
+      // Wenn weniger als 30 Positionen: durch Wiederholung auf GENAU 30 auffüllen
+      for (let i = 0; i < targetPointCount; i++) {
+        const sourceIndex = i % allPositions.length;
+        selectedPositions.push({...allPositions[sourceIndex]}); // Kopie erstellen
+      }
+    } else {
+      console.error(`FEHLER: Keine Positionen für Ziffer ${digit} gefunden!`);
+      // Fallback: 30 Punkte auf Standardposition
+      for (let i = 0; i < targetPointCount; i++) {
+        selectedPositions.push({ x: 100 + digitIndex * 100, y: 480, segmentIndex: 0 });
+      }
     }
+    
+    // SICHERHEITSCHECK: MUSS genau 30 sein!
+    if (selectedPositions.length !== targetPointCount) {
+      console.error(`KRITISCHER FEHLER: Ziffer ${digit} hat ${selectedPositions.length} statt ${targetPointCount} Punkte!`);
+      // Korrigieren: auf genau 30 kürzen oder auffüllen
+      if (selectedPositions.length > targetPointCount) {
+        selectedPositions = selectedPositions.slice(0, targetPointCount);
+      } else {
+        while (selectedPositions.length < targetPointCount) {
+          selectedPositions.push({...selectedPositions[0]}); // Ersten Punkt wiederholen
+        }
+      }
+    }
+    
+    // GENAU 30 Punkte für diese Ziffer hinzufügen
+    selectedPositions.forEach(pos => {
+      timePoints.push({
+        x: pos.x,
+        y: pos.y,
+        isBlue: false, // Startet als grau
+        digitIndex: digitIndex,
+        segmentIndex: pos.segmentIndex
+      });
+    });
+    
+    console.log(`Ziffer ${digit} (Index ${digitIndex}): GENAU ${selectedPositions.length} Punkte erstellt`);
   });
   
   // Doppelpunkt hinzufügen
@@ -304,7 +336,21 @@ function updateTimeDisplay() {
     { x: colonX, y: 500, isBlue: false, isColon: true }
   );
   
-  console.log(`Total time points created: ${timePoints.length} (should be 122: 4×30 + 2 colon)`); // Debug
+  // WICHTIGE ÜBERPRÜFUNG: Genau 122 Punkte total (4×30 + 2 Doppelpunkt)
+  const digitPoints = timePoints.filter(p => !p.isColon).length;
+  const colonPoints = timePoints.filter(p => p.isColon).length;
+  const expectedTotal = 4 * 30 + 2; // 122
+  
+  console.log(`=== PUNKTZÄHLUNG ===`);
+  console.log(`Ziffernpunkte: ${digitPoints}/120 (4 Ziffern × 30)`);
+  console.log(`Doppelpunkt: ${colonPoints}/2`);
+  console.log(`Gesamt: ${timePoints.length}/${expectedTotal}`);
+  
+  if (timePoints.length !== expectedTotal) {
+    console.error(`❌ FEHLER: Erwartet ${expectedTotal} Punkte, aber ${timePoints.length} erstellt!`);
+  } else {
+    console.log(`✅ KORREKT: Genau ${expectedTotal} Punkte erstellt!`);
+  }
 }
 
 function checkTimeUpdate() {
@@ -403,8 +449,8 @@ function movePhysicsPointToTarget(physicsPoint, targetX, targetY) {
     Math.pow(targetX - currentPos.x, 2) + Math.pow(targetY - currentPos.y, 2)
   );
   
-  // Viel höhere Geschwindigkeit für schnellere Ankunft
-  const speed = 45; // Erhöht von 20 auf 35 für garantiert schnelle Ankunft
+  // Etwas höhere Geschwindigkeit für besseres Timing
+  const speed = 60; // Leicht erhöht von 45 auf 60 für schnellere Ankunft
   const directionX = (targetX - currentPos.x) / distance;
   const directionY = (targetY - currentPos.y) / distance;
   
@@ -747,7 +793,7 @@ function checkArrivals() {
         arrivingPoints.push(index);
       }
       // Normale Ankunft prüfen
-      else if (distance <= 50) { // Erhöht von 30 auf 50 für schnellere Punkte
+      else if (distance <= 80) { // Erhöht von 50 auf 80 für bessere Ankunftserkennung
         console.log(`✅ Physikpunkt angekommen! Distanz: ${distance.toFixed(1)}px`);
         
         // Ziffernpunkt blau färben, falls Referenz vorhanden
@@ -788,9 +834,9 @@ function updateMovingPoints() {
         Math.pow(targetY - currentPos.y, 2)
       );
       
-      // Geschwindigkeit kontinuierlich zum Ziel ausrichten - VIEL schneller
+      // Geschwindigkeit kontinuierlich zum Ziel ausrichten - etwas schneller
       if (distance > 5) {
-        const speed = 35; // Erhöht von 20 auf 35 für garantiert schnelle Ankunft
+        const speed = 50; // Leicht erhöht von 35 auf 50 für besseres Timing
         const directionX = (targetX - currentPos.x) / distance;
         const directionY = (targetY - currentPos.y) / distance;
         
