@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Segment Storm</title>
+
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+
+  <!-- matter.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+
+  <!-- Digital Clock 7-Segment Display -->
+  <script type="text/javascript" src="../script/clockwork10_clock.js"></script>
+
+  <style>
+    body {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background-color: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    canvas {
+      border: none;
+      background-color: black;
+    }
+
+    .watch-frame {
+      position: relative;
+      width: 960px;
+      height: 960px;
+      background: black;
+      border-radius: 90px;
+      box-shadow: 0 0 20px rgba(255,255,255,0.1);
+      overflow: hidden;
+    }
+
+    .digital-crown {
+      position: absolute;
+      right: -8px;
+      top: 50%;
+      transform: translateY(-30px);
+      width: 8px;
+      height: 40px;
+      background: #333;
+      border-radius: 4px 0 0 4px;
+    }
+
+    .side-button {
+      position: absolute;
+      right: -8px;
+      top: 50%;
+      transform: translateY(30px);
+      width: 8px;
+      height: 30px;
+      background: #333;
+      border-radius: 4px 0 0 4px;
+    }
+  </style>
+</head>
+
+<body>
+    <div class="digital-crown"></div>
+    <div class="side-button"></div>
+    <div id="thecanvas"></div>
+  </div>
+</body>
+</html>
