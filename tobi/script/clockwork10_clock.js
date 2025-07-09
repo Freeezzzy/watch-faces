@@ -20,6 +20,10 @@ let lastHour = -1;
 let secondCounter = 0;
 let minuteCounter = 0;
 
+// 2-Sekunden Fallback für Zeit-Synchronisation
+let lastSyncCheck = 0;
+const syncCheckInterval = 2000; // Alle 2 Sekunden prüfen
+
 // 7-Segment-Display Muster (true = Segment aktiv)
 const segmentPatterns = {
   0: [true, true, true, true, true, true, false],
@@ -85,6 +89,9 @@ function draw() {
   
   // Prüfen ob sich die Zeit geändert hat
   checkTimeUpdate();
+  
+  // 2-Sekunden Fallback für Zeit-Synchronisation
+  checkTimeSynchronization();
   
   // Prüfen ob Physikpunkte ihre Ziele erreicht haben
   checkArrivals();
@@ -407,7 +414,7 @@ function checkTimeUpdate() {
   }
 }
 
-function movePointToMinuteDisplay() {
+function movePointToMinuteDisplay(speedMultiplier = 1.0) {
   // Finde verfügbaren blauen Punkt (der nicht bereits zu einem Ziel unterwegs ist)
   const availablePoint = physicsPoints.find(p => p.isActive && !p.isMovingToTarget);
   if (!availablePoint) {
@@ -426,7 +433,7 @@ function movePointToMinuteDisplay() {
     console.log(`🎯 Physikpunkt fliegt zu Minutenziffer bei (${targetPoint.x}, ${targetPoint.y})`);
     
     // Punkt zur Zielposition bewegen - Ziffernpunkt wird erst beim Ankommen blau
-    movePhysicsPointToTarget(availablePoint, targetPoint.x, targetPoint.y);
+    movePhysicsPointToTarget(availablePoint, targetPoint.x, targetPoint.y, speedMultiplier);
     
     // Referenz zum Ziffernpunkt speichern, damit er beim Ankommen blau wird
     availablePoint.targetTimePoint = targetPoint;
@@ -435,7 +442,7 @@ function movePointToMinuteDisplay() {
   }
 }
 
-function movePhysicsPointToTarget(physicsPoint, targetX, targetY) {
+function movePhysicsPointToTarget(physicsPoint, targetX, targetY, speedMultiplier = 1.0) {
   physicsPoint.isMovingToTarget = true;
   physicsPoint.targetPosition = { x: targetX, y: targetY };
   physicsPoint.startTime = millis(); // Startzeit speichern für Timeout-Prüfung
@@ -449,8 +456,9 @@ function movePhysicsPointToTarget(physicsPoint, targetX, targetY) {
     Math.pow(targetX - currentPos.x, 2) + Math.pow(targetY - currentPos.y, 2)
   );
   
-  // Etwas höhere Geschwindigkeit für besseres Timing
-  const speed = 60; // Leicht erhöht von 45 auf 60 für schnellere Ankunft
+  // Etwas höhere Geschwindigkeit für besseres Timing, mit Multiplikator
+  const baseSpeed = 60; // Leicht erhöht von 45 auf 60 für schnellere Ankunft
+  const speed = baseSpeed * speedMultiplier;
   const directionX = (targetX - currentPos.x) / distance;
   const directionY = (targetY - currentPos.y) / distance;
   
@@ -459,7 +467,7 @@ function movePhysicsPointToTarget(physicsPoint, targetX, targetY) {
     y: directionY * speed
   });
   
-  console.log(`🚀 Physikpunkt startet SCHNELLEN Flug zu Ziel (${targetX}, ${targetY}), Distanz: ${distance.toFixed(1)}px, Speed: ${speed}`);
+  console.log(`🚀 Physikpunkt startet SCHNELLEN Flug zu Ziel (${targetX}, ${targetY}), Distanz: ${distance.toFixed(1)}px, Speed: ${speed} (${speedMultiplier}x)`);
 }
 
 function resetMinutePoints() {
@@ -882,5 +890,124 @@ function updateGravity() {
     if (gravityX !== 0 || gravityY !== 0) {
       console.log(`🌍 Gravitation: (${gravityX.toFixed(2)}, ${gravityY.toFixed(2)})`);
     }
+  }
+}
+
+// 2-Sekunden Fallback System für Sekundenpunkte-Synchronisation
+function checkTimeSynchronization() {
+  const now = millis();
+  
+  // Nur alle 2 Sekunden prüfen
+  if (now - lastSyncCheck < syncCheckInterval) {
+    return;
+  }
+  
+  lastSyncCheck = now;
+  
+  const currentTime = new Date();
+  const currentSecond = currentTime.getSeconds();
+  
+  // Zähle blaue Punkte in der Minutenanzeige (digitIndex 2 oder 3) = Sekundenpunkte
+  const blueSecondPoints = timePoints.filter(p => 
+    !p.isColon && p.isBlue && (p.digitIndex === 2 || p.digitIndex === 3)
+  ).length;
+  
+  // Erwartete Anzahl basierend auf aktueller Sekunde
+  const expectedSecondPoints = currentSecond;
+  
+  console.log(`🔄 Sync Check: Sekundenpunkte ${blueSecondPoints}/${expectedSecondPoints} (Zeit: ${currentTime.getHours()}:${currentTime.getMinutes()}:${currentSecond})`);
+  
+  // Korrigiere Sekundenpunkte falls nötig
+  if (blueSecondPoints !== expectedSecondPoints) {
+    console.log(`⚠️ Second sync error: ${blueSecondPoints} vs ${expectedSecondPoints} - correcting`);
+    
+    if (blueSecondPoints < expectedSecondPoints) {
+      // Zu wenige blaue Punkte - erstelle neue Physikpunkte mit doppelter Geschwindigkeit
+      const needed = expectedSecondPoints - blueSecondPoints;
+      console.log(`🚀 Erstelle ${needed} neue Sekundenpunkte mit 2x Geschwindigkeit`);
+      
+      for (let i = 0; i < needed; i++) {
+        setTimeout(() => {
+          // Neuen Physikpunkt erstellen
+          const newPoint = createNewPhysicsPoint();
+          if (newPoint) {
+            // Sofort zu Minutenziffer bewegen mit doppelter Geschwindigkeit
+            moveNewPointToMinuteDisplay(newPoint, 2.0);
+          }
+        }, i * 100); // Gestaffelt senden alle 100ms
+      }
+    } else {
+      // Zu viele blaue Punkte - mache überschüssige grau
+      const excess = blueSecondPoints - expectedSecondPoints;
+      let removed = 0;
+      
+      console.log(`🔄 Mache ${excess} überschüssige Sekundenpunkte grau`);
+      
+      // Finde blaue Sekundenpunkte und mache sie grau (von hinten nach vorne)
+      const bluePoints = timePoints.filter(p => 
+        !p.isColon && p.isBlue && (p.digitIndex === 2 || p.digitIndex === 3)
+      );
+      
+      for (let i = bluePoints.length - 1; i >= 0 && removed < excess; i--) {
+        bluePoints[i].isBlue = false;
+        removed++;
+        console.log(`🔄 Sekundenpunkt bei (${bluePoints[i].x}, ${bluePoints[i].y}) wurde grau gemacht`);
+      }
+    }
+  }
+}
+
+// Erstelle einen neuen Physikpunkt für Fallback-System
+function createNewPhysicsPoint() {
+  let x = random(50, 910);
+  let y = random(50, 910);
+  
+  let point = Bodies.circle(x, y, 4, {
+    restitution: 1.0,
+    friction: 0,
+    frictionAir: 0,
+    density: 0.001
+  });
+  
+  // Zufällige Anfangsgeschwindigkeit
+  MatterBody.setVelocity(point, {
+    x: random(-3, 3),
+    y: random(-3, 3)
+  });
+  
+  const physicsPoint = {
+    body: point,
+    isActive: true,
+    targetPosition: null,
+    isMovingToTarget: false
+  };
+  
+  physicsPoints.push(physicsPoint);
+  World.add(world, point);
+  
+  console.log(`🆕 Neuer Physikpunkt erstellt bei (${x.toFixed(1)}, ${y.toFixed(1)}) für Fallback-System`);
+  
+  return physicsPoint;
+}
+
+// Bewege einen neuen Physikpunkt direkt zur Minutenziffer
+function moveNewPointToMinuteDisplay(physicsPoint, speedMultiplier = 1.0) {
+  // Finde nächsten grauen Minutenpunkt (digitIndex 2 oder 3)
+  const minutePoints = timePoints.filter(p => 
+    !p.isBlue && !p.isColon && (p.digitIndex === 2 || p.digitIndex === 3)
+  );
+  
+  if (minutePoints.length > 0) {
+    const targetPoint = minutePoints[0];
+    
+    console.log(`🎯 Neuer Physikpunkt fliegt zu Minutenziffer bei (${targetPoint.x}, ${targetPoint.y})`);
+    
+    // Punkt zur Zielposition bewegen - Ziffernpunkt wird erst beim Ankommen blau
+    movePhysicsPointToTarget(physicsPoint, targetPoint.x, targetPoint.y, speedMultiplier);
+    
+    // Referenz zum Ziffernpunkt speichern, damit er beim Ankommen blau wird
+    physicsPoint.targetTimePoint = targetPoint;
+  } else {
+    console.log("⚠️ Kein grauer Minutenpunkt für neuen Physikpunkt gefunden!");
   }
 }
