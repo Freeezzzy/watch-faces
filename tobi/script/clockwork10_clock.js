@@ -599,7 +599,8 @@ function drawDebugInfo() {
   const now = new Date();
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
   
-  // Debug-Text anzeigen
+  // Debug-Text anzeigen - AUSKOMMENTIERT für saubere Anzeige
+  /*
   fill(255); // Weiße Schrift
   textSize(16);
   textAlign(LEFT, TOP);
@@ -624,6 +625,7 @@ function drawDebugInfo() {
   fill(200);
   textSize(12);
   text(`Pfeiltasten: Gravitation steuern`, 20, 195);
+  */
 }
 
 
