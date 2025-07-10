@@ -263,10 +263,10 @@ function tick() {
       Matter.World.remove(world, blocks[0].body);
     }
     createCode(h, 0, "#727272");    
-    blocks[0].constrainTo(boxes[0], {pointA: {x: -100, y: 0}, pointB: {x: -150, y: -150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
-    blocks[0].constrainTo(boxes[0], {pointA: {x: 100, y: -4}, pointB: {x: 150, y: -150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
-    blocks[0].constrainTo(boxes[0], {pointA: {x: -100, y: 0}, pointB: {x: -150, y: 150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
-    blocks[0].constrainTo(boxes[0], {pointA: {x: 100, y: 4}, pointB: {x: 150, y: 150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
+    blocks[0].constrainTo(boxes[0], {pointA: {x: -120, y: 0}, pointB: {x: -150, y: -150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
+    blocks[0].constrainTo(boxes[0], {pointA: {x: 130, y: -4}, pointB: {x: 150, y: -150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
+    blocks[0].constrainTo(boxes[0], {pointA: {x: -120, y: 0}, pointB: {x: -150, y: 150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
+    blocks[0].constrainTo(boxes[0], {pointA: {x: 130, y: 4}, pointB: {x: 150, y: 150}, length: 150, stiffness: 0.1, draw:true, color:"#00FF2A"});
    
     actH = h;
   }
