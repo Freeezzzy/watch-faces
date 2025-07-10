@@ -8,30 +8,28 @@ const WATCH = {
         MIN: 0.002,
         INITIAL: 0.019,
         INCREMENT: 0.001,
-        MAX: 0.25,
-        YELLOW_THRESHOLD: 0.15,    // Changed from 0.20 to 0.12
-        BREAKAWAY_THRESHOLD: 0.22  // Changed from 0.30 to 0.17
+        MAX: 0.18,                     // Reduced from 0.25 to 0.18 (28% reduction)
+        YELLOW_THRESHOLD: 0.10,        // Reduced from 0.15 to 0.10 (earlier phase 2)
+        BREAKAWAY_THRESHOLD: 0.15      // Reduced from 0.22 to 0.15 (earlier phase 3)
     }
 };
 
 // Neue Hintergrund-Konstanten für Sterne
 const BACKGROUND = {
-    STAR_COUNT: 80,
+    STAR_COUNT: 40,  // Reduced from 80 to 40 (half the stars)
     TWINKLE_SPEED: 0.03,
     STAR_MIN_SIZE: 1,
     STAR_MAX_SIZE: 3,
-    SHOOTING_STAR_CHANCE: 0.003, // Increased from 0.0008 to 0.003
+    SHOOTING_STAR_CHANCE: 0.003,
     SHOOTING_STAR_DURATION: 60,
     // Neue Konstanten für Spezialeffekte
-    SPECIAL_EVENT_DURATION: 900, // 15 Sekunden bei 60fps
+    SPECIAL_EVENT_DURATION: 900,
     HOURLY_TWINKLE_BOOST: 0.3,
     SPECIAL_TWINKLE_BOOST: 0.6,
     SPECIAL_SHOOTING_STAR_MULTIPLIER: 8,
-    // Neue Konstanten für Minuten-Effekte
-    MINUTE_EFFECT_DURATION: 60, // 1 Sekunde bei 60fps
-    MINUTE_FADE_DURATION: 60,   // 1 Sekunde fade in/out
-    MINUTE_TWINKLE_BOOST: 0.2,
-    MINUTE_SHOOTING_STAR_MULTIPLIER: 3
+    // Neue Konstanten für Sekunden-Effekte
+    SECOND_EFFECT_DURATION: 180,
+    SECOND_SHOOTING_STAR_MULTIPLIER: 3
 };
 
 // Definiere die exakte 4-Farben-Palette
@@ -69,12 +67,14 @@ let hourlyTwinkleActive = false;
 let hourlyTwinkleTimer = 0;
 let lastHour = -1;
 
-// Neue Variablen für Minuten-Effekte
-let minuteEffectActive = false;
-let minuteEffectTimer = 0;
-let minuteFadeTimer = 0;
-let minuteEffectIntensity = 0;
+// Neue Variablen für Sekunden-Effekte
+let secondEffectActive = false;
+let secondEffectTimer = 0;
+let lastSecond = -1;
+
+// Add new state variables after existing ones
 let lastMinute = -1;
+let minuteStarsCreated = false;
 
 // Time override variables
 let useCustomTime = false;
@@ -143,9 +143,6 @@ function drawTwinklingStars() {
         twinkleBoost = BACKGROUND.SPECIAL_TWINKLE_BOOST;
     } else if (hourlyTwinkleActive) {
         twinkleBoost = BACKGROUND.HOURLY_TWINKLE_BOOST;
-    } else if (minuteEffectActive) {
-        // Fade in/out für Minuten-Effekt
-        twinkleBoost = BACKGROUND.MINUTE_TWINKLE_BOOST * minuteEffectIntensity;
     }
     
     for (let i = 0; i < stars.length; i++) {
@@ -162,19 +159,9 @@ function drawTwinklingStars() {
         let currentBrightness = star.baseBrightness + combinedTwinkle * intensity;
         currentBrightness = constrain(currentBrightness, 0.2, 1.0);
         
-        // NUR der eine Grauton - NO TRANSPARENCY
-        if (currentBrightness > 0.6) {
-            fill(COLORS.GRAY);
-        } else if (currentBrightness > 0.4) {
-            // Only show star if bright enough - binary visibility
-            if (random() < currentBrightness) {
-                fill(COLORS.GRAY);
-            } else {
-                continue; // Skip drawing this star
-            }
-        } else {
-            continue; // Don't draw dim stars
-        }
+        // NUR der eine Grauton mit variabler Transparenz
+        let alpha = map(currentBrightness, 0.2, 1.0, 80, 255);
+        fill(COLORS.GRAY, alpha);
         
         // Verstärkte Größenvariation während Events
         let sizeMultiplier = 1 + twinkleBoost * 0.5;
@@ -182,9 +169,9 @@ function drawTwinklingStars() {
         
         ellipse(star.x, star.y, currentSize);
         
-        // Verstärkter Glow-Effekt während Events - NO TRANSPARENCY
+        // Verstärkter Glow-Effekt während Events
         if (currentBrightness > 0.75 - twinkleBoost * 0.2) {
-            fill(COLORS.GRAY);
+            fill(COLORS.GRAY, alpha * 0.4 * (1 + twinkleBoost));
             ellipse(star.x, star.y, currentSize * (1.8 + twinkleBoost * 0.5));
         }
     }
@@ -233,16 +220,13 @@ function createShootingStar() {
 }
 
 function drawShootingStars() {
-    // Berechne Sternschnuppen-Wahrscheinlichkeit
+    // Normale Sternschnuppen-Wahrscheinlichkeit (NICHT erhöht bei neuen Minuten)
     let shootingChance = BACKGROUND.SHOOTING_STAR_CHANCE;
     if (specialEventActive) {
         shootingChance *= BACKGROUND.SPECIAL_SHOOTING_STAR_MULTIPLIER;
-    } else if (minuteEffectActive) {
-        // Fade in/out für Minuten-Effekt
-        shootingChance *= BACKGROUND.MINUTE_SHOOTING_STAR_MULTIPLIER * minuteEffectIntensity;
     }
     
-    // Erstelle neue Sternschnuppen - verstärkt während Events
+    // Erstelle normale Sternschnuppen (die 3 Minuten-Sternschnuppen werden in updateTime() erstellt)
     if (currentStage === 1 && random() < shootingChance) {
         createShootingStar();
     }
@@ -256,44 +240,29 @@ function drawShootingStars() {
         meteor.y += meteor.vy;
         meteor.life--;
         
-        // Calculate visibility based on life - NO TRANSPARENCY
-        let lifeRatio = meteor.life / BACKGROUND.SHOOTING_STAR_DURATION;
-        
-        // Only draw if life ratio is high enough
-        if (lifeRatio < 0.3) {
-            // Fade out by random visibility
-            if (random() > lifeRatio * 3) {
-                // Skip drawing this frame
-                if (meteor.life <= 0 || meteor.x < -50 || meteor.x > width + 50 || 
-                    meteor.y < -50 || meteor.y > height + 50) {
-                    shootingStars.splice(i, 1);
-                }
-                continue;
-            }
-        }
+        // Berechne Alpha basierend auf Lebensdauer - using strict color palette
+        let alpha = map(meteor.life, 0, BACKGROUND.SHOOTING_STAR_DURATION, 0, 255);
+        alpha = constrain(alpha, 0, 255);
         
         // Zeichne Sternschnuppe - using ONLY COLORS.GRAY
-        stroke(COLORS.GRAY);
+        stroke(COLORS.GRAY, alpha);
         strokeWeight(2);
         
         // Hauptlinie
         line(meteor.x, meteor.y, 
              meteor.x - meteor.vx * 8, meteor.y - meteor.vy * 8);
         
-        // Schweif - nur zeichnen wenn hell genug
-        if (lifeRatio > 0.4) {
-            for (let j = 1; j <= 3; j++) {
-                if (random() < lifeRatio) { // Random trail visibility
-                    stroke(COLORS.GRAY);
-                    strokeWeight(2 - j * 0.5);
-                    line(meteor.x - meteor.vx * j * 3, meteor.y - meteor.vy * j * 3,
-                         meteor.x - meteor.vx * (j + 3) * 3, meteor.y - meteor.vy * (j + 3) * 3);
-                }
-            }
+        // Schweif mit abnehmendem Alpha
+        for (let j = 1; j <= 3; j++) {
+            let trailAlpha = alpha * (1 - j * 0.3);
+            stroke(COLORS.GRAY, trailAlpha); // Using COLORS.GRAY consistently
+            strokeWeight(2 - j * 0.5);
+            line(meteor.x - meteor.vx * j * 3, meteor.y - meteor.vy * j * 3,
+                 meteor.x - meteor.vx * (j + 3) * 3, meteor.y - meteor.vy * (j + 3) * 3);
         }
         
-        // Kopf der Sternschnuppe
-        fill(COLORS.GRAY);
+        // Kopf der Sternschnuppe (heller Punkt) - using COLORS.GRAY
+        fill(COLORS.GRAY, alpha);
         noStroke();
         ellipse(meteor.x, meteor.y, 3);
         
@@ -639,14 +608,14 @@ function createPlanetAtOrbit(orbitIndex, angle) {
 
 function handleInput() {
     if (keyIsDown(87)) { // W key
-        orbitSpeed += WATCH.ORBIT_SPEED.INCREMENT;
+        orbitSpeed += WATCH.ORBIT_SPEED.INCREMENT * 0.3; // Reduced from 1.0 to 0.3
         // Cap the maximum speed
         if (orbitSpeed > WATCH.ORBIT_SPEED.MAX) {
             orbitSpeed = WATCH.ORBIT_SPEED.MAX;
         }
     }
     if (keyIsDown(83)) { // S key
-        orbitSpeed -= WATCH.ORBIT_SPEED.INCREMENT;
+        orbitSpeed -= WATCH.ORBIT_SPEED.INCREMENT * 0.3; // Reduced from 1.0 to 0.3
         // Cap the maximum negative speed
         if (orbitSpeed < -WATCH.ORBIT_SPEED.MAX) {
             orbitSpeed = -WATCH.ORBIT_SPEED.MAX;
@@ -672,6 +641,25 @@ function updateTime() {
     
     currentSecond = s;
 
+    // Prüfe auf neue Minute (nur bei Sekunde 0)
+    if (m !== lastMinute && s === 0) {
+        minuteStarsCreated = false; // Reset flag for new minute
+        
+        // Erstelle sofort 3 Sternschnuppen
+        for (let i = 0; i < 3; i++) {
+            setTimeout(() => createShootingStar(), i * 150); // Verzögert um 150ms pro Stern
+        }
+        minuteStarsCreated = true;
+        console.log(`3 shooting stars created at ${h}:${String(m).padStart(2, '0')}:00!`);
+    }
+    
+    // Reset flag when leaving second 0
+    if (s !== 0) {
+        minuteStarsCreated = false;
+    }
+    
+    lastMinute = m;
+
     // Prüfe auf Spezialevents (12:00 und 00:00)
     if ((h === 12 || h === 0) && m === 0 && s === 0) {
         if (!specialEventActive) {
@@ -688,18 +676,6 @@ function updateTime() {
         console.log(`Hourly twinkle triggered at ${h}:00!`);
     }
     lastHour = h;
-
-    // Prüfe auf Minuten-Effekt (jede neue Minute)
-    if (m !== lastMinute && s === 0) {
-        if (!minuteEffectActive) {
-            minuteEffectActive = true;
-            minuteEffectTimer = BACKGROUND.MINUTE_EFFECT_DURATION;
-            minuteFadeTimer = 0;
-            minuteEffectIntensity = 0;
-            console.log(`Minute effect triggered at ${h}:${String(m).padStart(2, '0')}!`);
-        }
-    }
-    lastMinute = m;
 
     // Keep 24-hour format - no conversion needed
     // Reihenfolge der Digits: m2, m1, h2, h1 (außen nach innen)
@@ -1203,29 +1179,12 @@ function draw() {
             }
         }
         
-        // Update Minuten-Effekt mit Fade
-        if (minuteEffectActive) {
-            minuteFadeTimer++;
-            
-            // Fade in (erste Sekunde)
-            if (minuteFadeTimer <= BACKGROUND.MINUTE_FADE_DURATION) {
-                minuteEffectIntensity = minuteFadeTimer / BACKGROUND.MINUTE_FADE_DURATION;
-            }
-            // Fade out (letzte Sekunde)
-            else if (minuteFadeTimer >= BACKGROUND.MINUTE_EFFECT_DURATION - BACKGROUND.MINUTE_FADE_DURATION) {
-                let remainingFrames = BACKGROUND.MINUTE_EFFECT_DURATION - minuteFadeTimer;
-                minuteEffectIntensity = remainingFrames / BACKGROUND.MINUTE_FADE_DURATION;
-            }
-            // Full intensity (mittlere Zeit)
-            else {
-                minuteEffectIntensity = 1.0;
-            }
-            
-            // Beende Effekt
-            if (minuteFadeTimer >= BACKGROUND.MINUTE_EFFECT_DURATION) {
-                minuteEffectActive = false;
-                minuteEffectIntensity = 0;
-                console.log('Minute effect ended');
+        // Update Sekunden-Effekt-Timer
+        if (secondEffectActive) {
+            secondEffectTimer--;
+            if (secondEffectTimer <= 0) {
+                secondEffectActive = false;
+                console.log('Second effect ended');
             }
         }
         

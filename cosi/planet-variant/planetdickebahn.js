@@ -848,19 +848,7 @@ function drawSeconds() {
 }
 
 function drawWatchFrame() {
-    // Äußerer Rahmen
-    noFill();
-    stroke(80);
-    strokeWeight(3);
-    rect(0, 0, width, height, 90); // Abgerundete Ecken
-
-    // Digital Crown Andeutung
-    fill(80);
-    noStroke();
-    rect(width - 8, height / 2 - 20, 8, 40, 5, 0, 0, 5);
-    
-    // Seitentaste
-    rect(width - 8, height / 2 + 40, 8, 30, 5, 0, 0, 5);
+    // Komplett leere Funktion - kein Rahmen mehr
 }
 
 function cleanup() {
